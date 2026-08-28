@@ -16,7 +16,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 @pytest.fixture
 def data_dir(tmp_path):
-    return str(tmp_path / "FocusGuard")
+    return str(tmp_path / "ProtBot")
 
 
 @pytest.fixture

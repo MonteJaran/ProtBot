@@ -4,7 +4,7 @@ activity.py - Deciding whether elapsed time actually counts as usage.
 The original accounting was pure wall-clock: the gap between two polls was
 added to the session, unconditionally. Two consequences, both bad:
 
-  * Shut the laptop lid overnight with Chrome open and FocusGuard books eight
+  * Shut the laptop lid overnight with Chrome open and ProtBot books eight
     hours of "usage", then closes Chrome the moment you resume.
   * An app sitting in a background window you never look at accrues time at the
     same rate as one you are actively working in.

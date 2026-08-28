@@ -1,5 +1,5 @@
 """
-config.py - JSON configuration for FocusGuard.
+config.py - JSON configuration for ProtBot.
 """
 
 import json
@@ -7,8 +7,10 @@ import os
 import tempfile
 import threading
 
-_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "FocusGuard")
-_CONFIG_PATH = os.path.join(_DATA_DIR, "config.json")
+
+from core.paths import ensure_data_dir
+
+CONFIG_FILENAME = "config.json"
 
 DEFAULT_CONFIG: dict = {
     "poll_interval": 60,           # seconds
@@ -38,7 +40,7 @@ DEFAULT_CONFIG: dict = {
     "focus_hours_limit_min": 0,            # 0 = blocked entirely while focusing
     # Delete usage history older than this many days. 0 keeps everything.
     # A year is far more than any view in the app shows, and it keeps the
-    # database from growing for as long as FocusGuard stays installed.
+    # database from growing for as long as ProtBot stays installed.
     "retention_days": 365,
     "first_run": True,
     # Privacy consent (see core/consent.py). 0 = never accepted; the app shows
@@ -62,10 +64,9 @@ class Config:
     def __init__(self, data_dir: str = "") -> None:
         # data_dir is injectable so tests can run against a temp directory
         # instead of the real %LOCALAPPDATA%.
-        self._dir = data_dir or _DATA_DIR
+        self._dir = data_dir or ensure_data_dir()
         os.makedirs(self._dir, exist_ok=True)
-        self._path = (_CONFIG_PATH if not data_dir
-                      else os.path.join(self._dir, "config.json"))
+        self._path = os.path.join(self._dir, CONFIG_FILENAME)
         self._data: dict = {}
         # save() is reachable from the monitor thread, the kill watcher and the
         # UI; without this two threads can interleave and write a mangled file.

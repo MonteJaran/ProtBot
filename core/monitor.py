@@ -1,5 +1,5 @@
 """
-monitor.py - Background monitoring thread for FocusGuard.
+monitor.py - Background monitoring thread for ProtBot.
 """
 
 import threading
@@ -34,7 +34,7 @@ def _send_notification(title: str, message: str) -> None:
         notification.notify(
             title=title,
             message=message,
-            app_name="FocusGuard",
+            app_name="ProtBot",
             timeout=8,
         )
     except Exception:
@@ -104,11 +104,11 @@ class Monitor:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="FocusGuard-Monitor")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="ProtBot-Monitor")
         self._thread.start()
         # Start fast kill-watcher (always running; only acts when setting is on)
         self._kill_thread = threading.Thread(target=self._kill_watcher, daemon=True,
-                                             name="FocusGuard-KillWatcher")
+                                             name="ProtBot-KillWatcher")
         self._kill_thread.start()
 
     def stop(self) -> None:
@@ -246,7 +246,7 @@ class Monitor:
                             self._clear_close_deadline(app_id)
                             if self.config.get("notifications_enabled", True):
                                 _send_notification(
-                                    "FocusGuard — App Closed",
+                                    "ProtBot — App Closed",
                                     f"{app['name']} was closed: daily limit of "
                                     f"{daily_limit} min reached.",
                                 )
@@ -307,7 +307,7 @@ class Monitor:
                     if closed:
                         if self.config.get("notifications_enabled", True):
                             _send_notification(
-                                "FocusGuard — App Blocked",
+                                "ProtBot — App Blocked",
                                 f"{app['name']} was blocked: you have already reached "
                                 f"your daily limit of {app.get('daily_limit_min', 0)} min.",
                             )
@@ -627,7 +627,7 @@ class Monitor:
                       f"{self._grace_seconds()}s.")
             if self.config.get("notifications_enabled", True):
                 _send_notification(
-                    "FocusGuard — Save your work",
+                    "ProtBot — Save your work",
                     f"{app_name} has reached its daily limit of "
                     f"{daily_limit_min} min and will close in "
                     f"{self._grace_seconds()} seconds.",
@@ -711,7 +711,7 @@ class Monitor:
                         self._clear_close_deadline(app_id)
                         if self.config.get("notifications_enabled", True):
                             _send_notification(
-                                "FocusGuard — App Closed",
+                                "ProtBot — App Closed",
                                 f"{app_name} was closed automatically: daily limit of "
                                 f"{daily_limit_min} min reached.",
                             )
@@ -727,7 +727,7 @@ class Monitor:
                     if self.config.get("notifications_enabled", True):
                         mins_used = today_sec // 60
                         _send_notification(
-                            "FocusGuard — Limit Reached",
+                            "ProtBot — Limit Reached",
                             f"{app_name} has exceeded its daily limit of {daily_limit_min} min "
                             f"(used {mins_used} min today).",
                         )
@@ -741,7 +741,7 @@ class Monitor:
                 if self.config.get("notifications_enabled", True):
                     mins_remaining = max(0, (limit_sec - today_sec) // 60)  # never negative
                     _send_notification(
-                        "FocusGuard — Approaching Limit",
+                        "ProtBot — Approaching Limit",
                         f"{app_name} — {int(usage_pct)}% of daily limit used. "
                         f"~{mins_remaining} min remaining.",
                     )

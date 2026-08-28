@@ -53,7 +53,7 @@ _ID_SHOW = 1001
 _ID_QUIT = 1002
 
 
-def create_tray(on_show, on_quit, icon_path: str = "", tooltip: str = "FocusGuard"):
+def create_tray(on_show, on_quit, icon_path: str = "", tooltip: str = "ProtBot"):
     """
     Build a tray icon, or return None if one cannot be created.
 
@@ -178,7 +178,7 @@ class _WindowsTray:
         if not menu:
             return
         try:
-            self._user32.AppendMenuW(menu, _MF_STRING, _ID_SHOW, "Show FocusGuard")
+            self._user32.AppendMenuW(menu, _MF_STRING, _ID_SHOW, "Show ProtBot")
             self._user32.AppendMenuW(menu, _MF_SEPARATOR, 0, None)
             self._user32.AppendMenuW(menu, _MF_STRING, _ID_QUIT, "Quit")
 
@@ -210,7 +210,7 @@ class _WindowsTray:
 
         wc = self._WNDCLASS()
         wc.lpfnWndProc = self._proc_ref
-        wc.lpszClassName = "FocusGuardTrayWindow"
+        wc.lpszClassName = "ProtBotTrayWindow"
         wc.hInstance = self._kernel32.GetModuleHandleW(None)
 
         atom = self._user32.RegisterClassW(ctypes.byref(wc))
@@ -219,7 +219,7 @@ class _WindowsTray:
             log.debug("Tray window class already registered")
 
         self._hwnd = self._user32.CreateWindowExW(
-            0, wc.lpszClassName, "FocusGuard", 0, 0, 0, 0, 0,
+            0, wc.lpszClassName, "ProtBot", 0, 0, 0, 0, 0,
             None, None, wc.hInstance, None,
         )
         if not self._hwnd:

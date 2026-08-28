@@ -1,7 +1,7 @@
 """
 consent.py - First-run privacy consent gate.
 
-FocusGuard records which applications you run. Before it records anything, the
+ProtBot records which applications you run. Before it records anything, the
 user has to be told what is collected and agree to it. This module owns that
 decision and the record of it.
 
@@ -22,10 +22,10 @@ from datetime import datetime, timezone
 CONSENT_VERSION = 1
 
 # Published policy. Falls back to the bundled PRIVACY.md if unreachable.
-PRIVACY_POLICY_URL = "https://focusguard.app/privacy"
+PRIVACY_POLICY_URL = "https://protbot.app/privacy"
 
 _SUMMARY = (
-    "FocusGuard records which applications you open and for how long, so it "
+    "ProtBot records which applications you open and for how long, so it "
     "can show you your usage and enforce the limits you set.\n\n"
     "What it stores on this PC:\n"
     "    •  the apps you choose to track\n"
@@ -94,7 +94,7 @@ def show_consent_dialog(parent) -> bool:
     ACCENT, MUTED = '#e94560', '#0f3460'
 
     dlg = tk.Toplevel(parent)
-    dlg.title("FocusGuard — Before you start")
+    dlg.title("ProtBot — Before you start")
     dlg.configure(bg=BG)
     dlg.resizable(False, False)
     dlg.transient(parent)
@@ -104,7 +104,7 @@ def show_consent_dialog(parent) -> bool:
     tk.Label(dlg, text="Before you start",
              bg=BG, fg=TEXT, font=('Segoe UI', 15, 'bold')).pack(
         anchor='w', padx=24, pady=(22, 2))
-    tk.Label(dlg, text="What FocusGuard records, and what it doesn't.",
+    tk.Label(dlg, text="What ProtBot records, and what it doesn't.",
              bg=BG, fg=TEXT2, font=('Segoe UI', 10)).pack(
         anchor='w', padx=24, pady=(0, 14))
 

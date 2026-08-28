@@ -2,7 +2,7 @@
 The protected-process denylist (AUDIT SF-02).
 
 Terminating a Windows critical process bugchecks the machine; terminating Task
-Manager locks the user out of stopping FocusGuard. Neither must ever be
+Manager locks the user out of stopping ProtBot. Neither must ever be
 possible, so these are enforced rather than documented.
 """
 
@@ -17,11 +17,11 @@ CRITICAL = [
     "lsass.exe", "smss.exe", "svchost.exe",
 ]
 
-# The user must always be able to inspect and stop FocusGuard.
+# The user must always be able to inspect and stop ProtBot.
 ESCAPE_HATCHES = ["taskmgr.exe", "procexp.exe", "perfmon.exe"]
 
-# FocusGuard runs on these; closing them closes FocusGuard mid-write.
-SELF = ["python.exe", "pythonw.exe", "focusguard.exe"]
+# ProtBot runs on these; closing them closes ProtBot mid-write.
+SELF = ["python.exe", "pythonw.exe", "protbot.exe"]
 
 # Ordinary apps a user is entitled to limit. These must NOT be protected.
 LIMITABLE = [

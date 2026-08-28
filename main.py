@@ -1,4 +1,4 @@
-"""FocusGuard - Application Usage Tracker"""
+"""ProtBot - Application Usage Tracker"""
 
 import sys
 import os
@@ -62,7 +62,7 @@ def create_tray_icon(root: tk.Tk, quit_fn):
     Tk main thread with root.after().
     """
     icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "FocusGuard.ico")
+                             "ProtBot.ico")
 
     def show_window():
         root.after(0, lambda: (root.deiconify(), root.lift(), root.focus_force()))
@@ -74,7 +74,7 @@ def create_tray_icon(root: tk.Tk, quit_fn):
         on_show=show_window,
         on_quit=on_quit,
         icon_path=icon_path if os.path.isfile(icon_path) else "",
-        tooltip=f"FocusGuard {__version__} \u2014 Running",
+        tooltip=f"ProtBot {__version__} \u2014 Running",
     )
 
 
@@ -87,7 +87,7 @@ def main() -> None:
         db = Database()
         logging_setup.configure(db.data_dir)
     except Exception as exc:
-        messagebox.showerror("FocusGuard \u2014 Database Error",
+        messagebox.showerror("ProtBot \u2014 Database Error",
                              f"Could not initialise the database:\n{exc}")
         sys.exit(1)
 
@@ -159,11 +159,11 @@ def main() -> None:
         root.after(
             800,
             lambda: messagebox.showinfo(
-                "Welcome to FocusGuard",
+                "Welcome to ProtBot",
                 "Welcome!\n\n"
                 "Start by clicking 'Browse Pre-loaded Apps' on the Files tab to "
                 "add applications you want to monitor.\n\n"
-                "Closing this window will minimise FocusGuard to the system tray.",
+                "Closing this window will minimise ProtBot to the system tray.",
                 parent=root,
             ),
         )
@@ -179,7 +179,7 @@ def main() -> None:
     # user doing anything, but a slow server must never delay startup, and a
     # failure leaves the cached entitlement untouched.
     threading.Thread(target=lambda: licensing.refresh(config),
-                     daemon=True, name="FocusGuard-LicenceRefresh").start()
+                     daemon=True, name="ProtBot-LicenceRefresh").start()
 
     # ── Update check ──────────────────────────────────────────────────────────
     # Background, and only after the window is up: a slow or unreachable host

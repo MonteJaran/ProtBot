@@ -1,4 +1,4 @@
-; Inno Setup script for FocusGuard.
+; Inno Setup script for ProtBot.
 ;
 ; Build with:
 ;   iscc /DAppVersion=1.0.0 packaging\installer.iss
@@ -13,10 +13,10 @@
   #define AppVersion "0.0.0"
 #endif
 
-#define AppName        "FocusGuard"
-#define AppPublisher   "FocusGuard"
-#define AppExeName     "FocusGuard.exe"
-#define AppURL         "https://focusguard.app"
+#define AppName        "ProtBot"
+#define AppPublisher   "ProtBot"
+#define AppExeName     "ProtBot.exe"
+#define AppURL         "https://protbot.app"
 
 [Setup]
 ; Generated once and never changed: Windows uses it to recognise upgrades of
@@ -37,7 +37,7 @@ DisableProgramGroupPage=yes
 LicenseFile=..\PRIVACY.md
 OutputDir=..\dist\installer
 OutputBaseFilename={#AppName}-{#AppVersion}-setup
-SetupIconFile=..\FocusGuard.ico
+SetupIconFile=..\ProtBot.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
 
@@ -89,7 +89,7 @@ Filename: "{app}\{#AppExeName}"; \
 Type: filesandordirs; Name: "{app}"
 
 [Code]
-{ FocusGuard may be running from the tray when an upgrade or uninstall starts.
+{ ProtBot may be running from the tray when an upgrade or uninstall starts.
   Left running, its files are locked and the install silently half-fails. }
 function IsAppRunning(): Boolean;
 var
@@ -139,7 +139,7 @@ begin
     DataDir := ExpandConstant('{localappdata}\{#AppName}');
     if DirExists(DataDir) then
     begin
-      if MsgBox('Also delete your FocusGuard data?' + #13#10#13#10 +
+      if MsgBox('Also delete your ProtBot data?' + #13#10#13#10 +
                 'This removes your usage history, tracked app list, settings ' +
                 'and logs from:' + #13#10 + DataDir + #13#10#13#10 +
                 'Choose No to keep them for a future reinstall.',

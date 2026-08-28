@@ -1,5 +1,5 @@
 """
-processes_page.py - Processes tab for FocusGuard.
+processes_page.py - Processes tab for ProtBot.
 Shows real-time usage statistics for all tracked applications.
 """
 
@@ -400,7 +400,7 @@ class ProcessesPage(ttk.Frame):
         docs_dir = os.path.join(os.path.expanduser("~"), "Documents")
         os.makedirs(docs_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = os.path.join(docs_dir, f"FocusGuard_export_{timestamp}.csv")
+        filename = os.path.join(docs_dir, f"ProtBot_export_{timestamp}.csv")
 
         try:
             apps = self.db.get_all_tracked_apps()

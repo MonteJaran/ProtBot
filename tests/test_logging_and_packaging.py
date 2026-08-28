@@ -43,7 +43,7 @@ def _pyproject_dependencies() -> set:
 def fresh_logging(data_dir):
     logging_setup.configure(data_dir, level=logging.DEBUG, force=True)
     yield data_dir
-    for handler in list(logging.getLogger("focusguard").handlers):
+    for handler in list(logging.getLogger("protbot").handlers):
         handler.close()
 
 
@@ -73,7 +73,7 @@ def test_entries_carry_a_level_and_source(fresh_logging):
     text = open(os.path.join(fresh_logging, logging_setup.LOG_FILENAME),
                 encoding="utf-8").read()
     assert "ERROR" in text
-    assert "focusguard.monitor" in text
+    assert "protbot.monitor" in text
 
 
 def test_the_log_is_capped_and_rotates(fresh_logging):
@@ -103,7 +103,7 @@ def test_debug_detail_is_off_at_the_default_level(data_dir):
 def test_configure_is_idempotent(data_dir):
     logging_setup.configure(data_dir, force=True)
     logging_setup.configure(data_dir)
-    assert len(logging.getLogger("focusguard").handlers) == 1
+    assert len(logging.getLogger("protbot").handlers) == 1
 
 
 def test_an_unwritable_directory_does_not_crash(tmp_path):
@@ -144,7 +144,7 @@ def test_deleting_data_removes_rotated_logs_too(data_dir):
 def test_version_is_a_sensible_string():
     assert __version__.count(".") >= 1
     assert all(part.isdigit() for part in __version__.split(".")[:2])
-    assert APP_NAME == "FocusGuard"
+    assert APP_NAME == "ProtBot"
 
 
 def test_pyproject_version_matches_the_code():

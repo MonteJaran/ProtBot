@@ -1,5 +1,5 @@
 """
-insights_page.py - Eye-opening usage insights for FocusGuard.
+insights_page.py - Eye-opening usage insights for ProtBot.
 Refreshed only when the tab is selected, so scroll position is never lost.
 """
 

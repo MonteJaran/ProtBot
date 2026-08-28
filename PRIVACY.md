@@ -1,7 +1,7 @@
-# FocusGuard Privacy Policy
+# ProtBot Privacy Policy
 
 **Last updated:** 2026-08-26
-**Applies to:** FocusGuard for Windows, version 1.0.0
+**Applies to:** ProtBot for Windows, version 1.0.0
 
 > **Draft — needs legal review before public release.** This document describes
 > what the code actually does today, verified against the source. It is written
@@ -13,25 +13,25 @@
 
 ## The short version
 
-FocusGuard runs on your computer and records which applications you open and
+ProtBot runs on your computer and records which applications you open and
 for how long. **By default, all of that stays on your PC.** Nothing is uploaded
 anywhere unless you deliberately turn on device sync.
 
 ---
 
-## What FocusGuard records on your computer
+## What ProtBot records on your computer
 
 To do its job — showing you your usage and enforcing the limits you set —
-FocusGuard stores locally:
+ProtBot stores locally:
 
 | Data | Where | Why |
 |---|---|---|
-| Names and file paths of the apps you choose to track | `%LOCALAPPDATA%\FocusGuard\focusguard.db` | So it can recognise them when they run |
+| Names and file paths of the apps you choose to track | `%LOCALAPPDATA%\ProtBot\protbot.db` | So it can recognise them when they run |
 | Start time, end time and duration of each session | same database | To calculate your usage against your limits |
-| Your settings and limits | `%LOCALAPPDATA%\FocusGuard\config.json` | To remember your preferences |
-| A diagnostic log | `%LOCALAPPDATA%\FocusGuard\focusguard.log` | To help diagnose problems |
+| Your settings and limits | `%LOCALAPPDATA%\ProtBot\config.json` | To remember your preferences |
+| A diagnostic log | `%LOCALAPPDATA%\ProtBot\protbot.log` | To help diagnose problems |
 
-FocusGuard checks the list of running processes to detect the apps you asked it
+ProtBot checks the list of running processes to detect the apps you asked it
 to track. It does **not** record what you type, what you look at, the contents
 of any window, your browsing history, your files, or screenshots.
 
@@ -61,7 +61,7 @@ advertising profiles.
 
 ## Checking for updates
 
-On startup FocusGuard fetches a small file from our server to see whether a
+On startup ProtBot fetches a small file from our server to see whether a
 newer version exists. That request unavoidably reveals your IP address and the
 version you are running, the same as visiting any web page. It sends nothing
 about you, your apps or your usage, and it never downloads or installs anything
@@ -86,7 +86,7 @@ retained until you request deletion.
 
 ## Your choices
 
-- **Use FocusGuard entirely offline.** Never register a device and nothing is
+- **Use ProtBot entirely offline.** Never register a device and nothing is
   ever transmitted.
 - **See your data.** It is a standard SQLite database at the path above. The
   Export CSV button on the Processes tab produces a readable copy.
@@ -99,12 +99,12 @@ retained until you request deletion.
 
 ## Children
 
-FocusGuard is not intended for children under 16. Do not register a device or
+ProtBot is not intended for children under 16. Do not register a device or
 enter an email address if you are under 16.
 
 ## Monitoring other people
 
-FocusGuard is intended for monitoring your own device. Installing it on someone
+ProtBot is intended for monitoring your own device. Installing it on someone
 else's computer to record their activity without telling them may be illegal
 where you live. That is your responsibility, not ours.
 

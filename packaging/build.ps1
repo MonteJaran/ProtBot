@@ -1,4 +1,4 @@
-# Build FocusGuard: PyInstaller folder build, then an Inno Setup installer.
+# Build ProtBot: PyInstaller folder build, then an Inno Setup installer.
 #
 #   powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 #   powershell -ExecutionPolicy Bypass -File packaging\build.ps1 -Sign
@@ -10,7 +10,7 @@
 param(
     # Sign the executable and installer. Needs a certificate; see BUILD.md.
     [switch]$Sign,
-    [string]$CertThumbprint = $env:FOCUSGUARD_CERT_THUMBPRINT,
+    [string]$CertThumbprint = $env:PROTBOT_CERT_THUMBPRINT,
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
     [switch]$SkipInstaller
 )
@@ -26,7 +26,7 @@ function Ok($message)   { Write-Host "    $message" -ForegroundColor Green }
 Step 'Reading version'
 $Version = (python -c "import sys; sys.path.insert(0, '.'); from core.version import __version__; print(__version__)").Trim()
 if (-not $Version) { throw 'Could not read version from core/version.py' }
-Ok "FocusGuard $Version"
+Ok "ProtBot $Version"
 
 # ── Checks before spending time on a build ───────────────────────────────────
 Step 'Checking the tree is releasable'
@@ -52,10 +52,10 @@ Ok 'version_info.txt written'
 
 # ── PyInstaller ──────────────────────────────────────────────────────────────
 Step 'Building the executable'
-python -m PyInstaller packaging\focusguard.spec --noconfirm --clean
+python -m PyInstaller packaging\protbot.spec --noconfirm --clean
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed.' }
 
-$ExePath = Join-Path $Root 'dist\FocusGuard\FocusGuard.exe'
+$ExePath = Join-Path $Root 'dist\ProtBot\ProtBot.exe'
 if (-not (Test-Path $ExePath)) { throw "Expected $ExePath, which is missing." }
 Ok "Built $ExePath"
 
@@ -76,10 +76,10 @@ Ok 'Launches and stays running'
 # the installer itself afterwards.
 function Invoke-Sign($path) {
     if (-not $CertThumbprint) {
-        throw 'No certificate thumbprint. Set FOCUSGUARD_CERT_THUMBPRINT or pass -CertThumbprint.'
+        throw 'No certificate thumbprint. Set PROTBOT_CERT_THUMBPRINT or pass -CertThumbprint.'
     }
     & signtool.exe sign /sha1 $CertThumbprint /fd SHA256 `
-        /tr $TimestampUrl /td SHA256 /d 'FocusGuard' $path
+        /tr $TimestampUrl /td SHA256 /d 'ProtBot' $path
     if ($LASTEXITCODE -ne 0) { throw "Signing failed for $path" }
     Ok "Signed $path"
 }
@@ -115,7 +115,7 @@ if ($SkipInstaller) {
         & $iscc "/DAppVersion=$Version" 'packaging\installer.iss'
         if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed.' }
 
-        $SetupPath = Join-Path $Root "dist\installer\FocusGuard-$Version-setup.exe"
+        $SetupPath = Join-Path $Root "dist\installer\ProtBot-$Version-setup.exe"
         Ok "Built $SetupPath"
 
         if ($Sign) {
@@ -126,7 +126,7 @@ if ($SkipInstaller) {
 }
 
 Write-Host ''
-Write-Host "FocusGuard $Version built." -ForegroundColor Green
+Write-Host "ProtBot $Version built." -ForegroundColor Green
 if (-not $Sign) {
     Write-Host 'Unsigned. Read BUILD.md before distributing this to anyone.' -ForegroundColor Yellow
 }

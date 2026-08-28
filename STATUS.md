@@ -34,7 +34,7 @@ by tests that read the source. It is very likely something here is wrong.
 
 - **`core/tray.py`** — the whole Win32 tray icon, via ctypes. Degrades to "no
   tray" on failure rather than crashing, so the worst case is a missing icon.
-- **`packaging/build.ps1`, `focusguard.spec`, `installer.iss`** — the entire
+- **`packaging/build.ps1`, `protbot.spec`, `installer.iss`** — the entire
   build and installer. `build.ps1` launches the frozen app and checks it stays
   running for eight seconds, which is the gate that matters: a missing hidden
   import kills a frozen GUI app *silently*.
@@ -57,9 +57,9 @@ holding or guessing one can read that user's data.
 
 Client-side plumbing is a day. The server half is item 6 above.
 
-### 2. Pin dependencies by hash
-`requirements.txt` uses lower bounds, so two builds a month apart are not the
-same software. `pip-compile --generate-hashes` before any release.
+### 2. ~~Pin dependencies by hash~~ — DONE
+`requirements.lock` pins every dependency to an exact version and SHA-256 hash.
+Install release builds with `--require-hashes`.
 
 ### 3. Make it an installable package (AUDIT ST-04 remainder)
 `main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
@@ -76,9 +76,9 @@ pattern recognition over your own history (plain statistics, no model needed),
 predictive alerts, PDF/Excel export, team features (needs #1 and sync first).
 
 ### 6. Rename to ProtBot
-The code says FocusGuard everywhere — `core/version.py`, the tray, the
+The code says ProtBot everywhere — `core/version.py`, the tray, the
 installer, the `.bat`, the icon, and **the data directory
-`%LOCALAPPDATA%\FocusGuard`**.
+`%LOCALAPPDATA%\ProtBot`**.
 
 Not cosmetic. Done properly it needs a migration that moves the old data
 directory on first run, care with the Inno `AppId` so updates replace rather
@@ -103,6 +103,15 @@ Recorded so nobody rediscovers them as bugs.
   also the reason there is nothing to sell.
 
 ---
+
+## Android and the app stores
+
+See [`PLATFORMS.md`](PLATFORMS.md). The Microsoft Store is the right target.
+Android and iOS would each be a **separate application** — Tkinter does not run
+on either, Android forbids listing or closing other apps (the sanctioned route
+is `UsageStatsManager` plus an `AccessibilityService`, which Google restricts
+heavily), and iOS needs an entitlement Apple grants case by case. Nothing but
+the sync protocol would be reused.
 
 ## Suggested order
 

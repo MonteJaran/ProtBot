@@ -1,5 +1,5 @@
 """
-logging_setup.py - One place that decides where FocusGuard's logs go.
+logging_setup.py - One place that decides where ProtBot's logs go.
 
 Replaces the hand-rolled _log() in monitor.py, which had three problems:
 
@@ -19,7 +19,7 @@ import logging
 import logging.handlers
 import os
 
-LOG_FILENAME = "focusguard.log"
+LOG_FILENAME = "protbot.log"
 
 # Two 512 KB files. Enough to see what happened before a crash, small enough
 # that it never becomes a liability sitting in the user's profile.
@@ -42,19 +42,19 @@ def configure(data_dir: str, level=None, force: bool = False) -> None:
     """
     Set up file logging under `data_dir`. Safe to call more than once.
 
-    `level` defaults to the FOCUSGUARD_LOG_LEVEL environment variable, or
-    WARNING. Set FOCUSGUARD_LOG_LEVEL=DEBUG to get the per-poll detail.
+    `level` defaults to the PROTBOT_LOG_LEVEL environment variable, or
+    WARNING. Set PROTBOT_LOG_LEVEL=DEBUG to get the per-poll detail.
     """
     global _configured
     if _configured and not force:
         return
 
     if level is None:
-        level = os.environ.get("FOCUSGUARD_LOG_LEVEL", "WARNING").upper()
+        level = os.environ.get("PROTBOT_LOG_LEVEL", "WARNING").upper()
     if isinstance(level, str):
         level = getattr(logging, level, logging.WARNING)
 
-    root = logging.getLogger("focusguard")
+    root = logging.getLogger("protbot")
     root.setLevel(level)
     root.propagate = False
 
@@ -85,4 +85,4 @@ def configure(data_dir: str, level=None, force: bool = False) -> None:
 
 def get_logger(name: str) -> logging.Logger:
     """A child logger. Call configure() first; this works regardless."""
-    return logging.getLogger(f"focusguard.{name}")
+    return logging.getLogger(f"protbot.{name}")

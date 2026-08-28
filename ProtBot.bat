@@ -1,10 +1,10 @@
 @echo off
 setlocal
-title FocusGuard
+title ProtBot
 cd /d "%~dp0"
 
 :: ─────────────────────────────────────────────────────────────────────────────
-::  Run FocusGuard from source, in its own virtual environment.
+::  Run ProtBot from source, in its own virtual environment.
 ::
 ::  This is the DEVELOPER / source path. End users should get the installer
 ::  built by packaging\build.ps1 -- see BUILD.md.
@@ -21,7 +21,7 @@ cd /d "%~dp0"
 :: ─────────────────────────────────────────────────────────────────────────────
 
 echo.
-echo   FocusGuard - App Usage Monitor
+echo   ProtBot - App Usage Monitor
 echo   -----------------------------
 echo.
 
@@ -56,7 +56,7 @@ if exist "create_shortcut.ps1" (
 )
 
 :: ── Launch ───────────────────────────────────────────────────────────────────
-echo   Starting FocusGuard ...
+echo   Starting ProtBot ...
 start "" ".venv\Scripts\pythonw.exe" main.py
 if %errorlevel% neq 0 goto :launch_failed
 
@@ -89,7 +89,7 @@ pause
 exit /b 1
 
 :launch_failed
-echo   [ERROR] FocusGuard did not start.
+echo   [ERROR] ProtBot did not start.
 echo   Run this to see the error:
 echo       .venv\Scripts\python.exe main.py
 echo.

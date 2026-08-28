@@ -1,5 +1,5 @@
 """
-settings_page.py - Settings tab for FocusGuard.
+settings_page.py - Settings tab for ProtBot.
 """
 
 import os
@@ -99,7 +99,7 @@ class SettingsPage(ttk.Frame):
         tk.Label(parent, text="Poll Interval", bg=BG, fg=TEXT,
                  font=('Segoe UI', 10)).pack(anchor='w', padx=32, pady=(0, 4))
         tk.Label(parent,
-                 text="How often FocusGuard checks which apps are running.",
+                 text="How often ProtBot checks which apps are running.",
                  bg=BG, fg=TEXT2, font=('Segoe UI', 9)).pack(anchor='w', padx=32, pady=(0, 6))
 
         row = ttk.Frame(parent, style='TFrame')
@@ -290,7 +290,7 @@ class SettingsPage(ttk.Frame):
         tk.Label(
             parent,
             text=(
-                "When enabled, FocusGuard will force-close any tracked app the moment its\n"
+                "When enabled, ProtBot will force-close any tracked app the moment its\n"
                 "daily time limit is reached. It will also block the app from opening again\n"
                 "if you have already used up your limit for the day."
             ),
@@ -332,7 +332,7 @@ class SettingsPage(ttk.Frame):
                 0, winreg.KEY_READ,
             )
             try:
-                winreg.QueryValueEx(key, "FocusGuard")
+                winreg.QueryValueEx(key, "ProtBot")
                 self._startup_status_var.set("Status: Added to Windows Startup")
             except FileNotFoundError:
                 self._startup_status_var.set("Status: Not in Windows Startup")
@@ -357,11 +357,11 @@ class SettingsPage(ttk.Frame):
                 r"Software\Microsoft\Windows\CurrentVersion\Run",
                 0, winreg.KEY_SET_VALUE,
             )
-            winreg.SetValueEx(key, "FocusGuard", 0, winreg.REG_SZ, cmd)
+            winreg.SetValueEx(key, "ProtBot", 0, winreg.REG_SZ, cmd)
             winreg.CloseKey(key)
             self._refresh_startup_status()
             messagebox.showinfo("Startup",
-                                "FocusGuard has been added to Windows startup.",
+                                "ProtBot has been added to Windows startup.",
                                 parent=self)
         except Exception as exc:
             messagebox.showerror("Error",
@@ -377,13 +377,13 @@ class SettingsPage(ttk.Frame):
                 0, winreg.KEY_SET_VALUE,
             )
             try:
-                winreg.DeleteValue(key, "FocusGuard")
+                winreg.DeleteValue(key, "ProtBot")
                 messagebox.showinfo("Startup",
-                                    "FocusGuard has been removed from Windows startup.",
+                                    "ProtBot has been removed from Windows startup.",
                                     parent=self)
             except FileNotFoundError:
                 messagebox.showinfo("Startup",
-                                    "FocusGuard was not in Windows startup.",
+                                    "ProtBot was not in Windows startup.",
                                     parent=self)
             finally:
                 winreg.CloseKey(key)
@@ -538,12 +538,12 @@ class SettingsPage(ttk.Frame):
     # ── Section: About ────────────────────────────────────────────────────────
 
     def _build_about_section(self, parent) -> None:
-        self._section_header(parent, "About FocusGuard")
+        self._section_header(parent, "About ProtBot")
 
         info_frame = tk.Frame(parent, bg=BG2, bd=0)
         info_frame.pack(fill='x', padx=24, pady=(4, 16))
 
-        tk.Label(info_frame, text="FocusGuard",
+        tk.Label(info_frame, text="ProtBot",
                  bg=BG2, fg=ACCENT, font=('Segoe UI', 16, 'bold'),
                  ).pack(anchor='w', padx=16, pady=(12, 0))
         tk.Label(info_frame, text=f"Version {_APP_VERSION}",
@@ -551,7 +551,7 @@ class SettingsPage(ttk.Frame):
                  ).pack(anchor='w', padx=16, pady=(0, 6))
         tk.Label(info_frame,
                  text=(
-                     "FocusGuard is a lightweight Windows desktop application that monitors "
+                     "ProtBot is a lightweight Windows desktop application that monitors "
                      "your application usage in the background. Track how much time you spend "
                      "in your favourite apps, set daily and weekly limits, and receive "
                      "notifications when you are approaching or exceeding those limits."

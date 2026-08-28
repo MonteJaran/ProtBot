@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for FocusGuard.
+PyInstaller spec for ProtBot.
 
-Build with:   pyinstaller packaging/focusguard.spec --noconfirm
+Build with:   pyinstaller packaging/protbot.spec --noconfirm
 Run from the repository root, not from packaging/.
 
 One-FOLDER, not one-file, deliberately:
@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(SPECPATH).parent))
 from core.version import APP_NAME, __version__      # noqa: E402
 
 ROOT = Path(SPECPATH).parent
-ICON = ROOT / "FocusGuard.ico"
+ICON = ROOT / "ProtBot.ico"
 
 a = Analysis(
     [str(ROOT / "main.py")],

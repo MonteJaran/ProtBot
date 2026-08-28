@@ -7,7 +7,7 @@ python -m ruff check .    # lint
 ```
 
 Every test runs against a temp directory, so the suite never touches your real
-`%LOCALAPPDATA%\FocusGuard` data.
+`%LOCALAPPDATA%\ProtBot` data.
 
 ## What's covered
 
@@ -17,7 +17,7 @@ Every test runs against a temp directory, so the suite never touches your real
 | `test_config.py` | Defaults, persistence, merging new keys into an old config, recovery from a corrupt file |
 | `test_consent.py` | The first-run privacy gate's decision logic and policy versioning |
 | `test_no_false_advertising.py` | Regression guards for the two legal findings — see below |
-| `test_protected.py` | The denylist that stops FocusGuard closing critical Windows processes or Task Manager |
+| `test_protected.py` | The denylist that stops ProtBot closing critical Windows processes or Task Manager |
 | `test_procutil.py` | The staged close sequence, against a faked psutil — no real processes are touched |
 | `test_monitor_grace.py` | The warning countdown before an app is closed, and the daily rollover reset |
 | `test_storage_hardening.py` | Schema versioning, index usage, complete deletion, atomic config writes, concurrent writers |
@@ -25,6 +25,7 @@ Every test runs against a temp directory, so the suite never touches your real
 | `test_monitor_polling.py` | The polling loop end to end, with psutil, the clock and the activity probes all faked |
 | `test_logging_and_packaging.py` | Log rotation and format, the version single-source, and dependency hygiene |
 | `test_packaging_build.py` | The PyInstaller spec, installer script and launcher — drift and antivirus-trigger regressions |
+| `test_rename_migration.py` | The FocusGuard → ProtBot data move, so an upgrade keeps the user's history |
 | `test_schedule.py` | Focus hours, including the overnight-window cases a naive time comparison gets wrong |
 | `test_licensing.py` | The entitlement gate — defaults, tamper evidence, expiry, the offline grace period, and server failures never revoking access |
 | `test_retention_and_updates.py` | History pruning, version comparison, manifest handling, and that the privacy policy matches the product |

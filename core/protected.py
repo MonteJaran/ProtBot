@@ -1,5 +1,5 @@
 """
-protected.py - Processes FocusGuard must never track or terminate.
+protected.py - Processes ProtBot must never track or terminate.
 
 Without this list, a user can add any executable on disk as a tracked app and
 give it a daily limit. Two things then go badly wrong:
@@ -8,7 +8,7 @@ give it a daily limit. Two things then go badly wrong:
     lsass, smss) triggers a CRITICAL_PROCESS_DIED bugcheck. The app would blue
     screen the machine.
   * Terminating Task Manager on a 5-second loop locks the user out of the one
-    tool they would use to stop FocusGuard. That behaviour is also what
+    tool they would use to stop ProtBot. That behaviour is also what
     antivirus heuristics score as a trojan.
 
 The list is matched on executable name, lowercased. That is the right
@@ -36,8 +36,8 @@ _CRITICAL = {
 # taskbar, Start menu and every open Explorer window disappear.
 _SHELL = {"explorer.exe"}
 
-# The user's escape hatches. FocusGuard must never be able to stop someone
-# from inspecting or stopping FocusGuard.
+# The user's escape hatches. ProtBot must never be able to stop someone
+# from inspecting or stopping ProtBot.
 _USER_CONTROL = {
     "taskmgr.exe", "procexp.exe", "procexp64.exe", "procmon.exe",
     "perfmon.exe", "resmon.exe", "mmc.exe",
@@ -50,11 +50,11 @@ _SECURITY = {
     "windefend.exe", "msseces.exe",
 }
 
-# FocusGuard itself. It runs under pythonw.exe during development and under its
+# ProtBot itself. It runs under pythonw.exe during development and under its
 # own executable once frozen; without this, tracking "Python" makes the app
 # terminate itself mid-write.
 _SELF = {
-    "python.exe", "pythonw.exe", "focusguard.exe", "py.exe",
+    "python.exe", "pythonw.exe", "protbot.exe", "py.exe",
 }
 
 PROTECTED_PROCESS_NAMES = frozenset(
@@ -97,9 +97,9 @@ def protection_reason(exe_name: str = "", exe_path: str = "") -> str:
                     "taskbar and Start menu.")
         if name in _USER_CONTROL:
             return ("This is a system tool you need in order to manage running "
-                    "programs — including FocusGuard itself.")
+                    "programs — including ProtBot itself.")
         if name in _SECURITY:
             return "This is security software and must keep running."
         if name in _SELF:
-            return "FocusGuard runs on this, so limiting it would close FocusGuard."
+            return "ProtBot runs on this, so limiting it would close ProtBot."
     return ""

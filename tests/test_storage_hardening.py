@@ -36,7 +36,7 @@ def test_unversioned_legacy_database_is_adopted(data_dir):
     match the v1 schema, so they must be stamped, not migrated or rejected.
     """
     os.makedirs(data_dir, exist_ok=True)
-    path = os.path.join(data_dir, "focusguard.db")
+    path = os.path.join(data_dir, "protbot.db")
     conn = sqlite3.connect(path)
     conn.execute("""CREATE TABLE tracked_apps (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
@@ -63,7 +63,7 @@ def test_unversioned_legacy_database_is_adopted(data_dir):
 def test_a_newer_database_is_refused_rather_than_corrupted(data_dir):
     """Downgrading must fail loudly instead of writing an old schema over a new one."""
     os.makedirs(data_dir, exist_ok=True)
-    path = os.path.join(data_dir, "focusguard.db")
+    path = os.path.join(data_dir, "protbot.db")
     conn = sqlite3.connect(path)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 5};")
     conn.commit()

@@ -1,5 +1,5 @@
 """
-generate_icon.py - Regenerate FocusGuard.ico.
+generate_icon.py - Regenerate ProtBot.ico.
 
 Development tool, not shipped and not a runtime dependency: it needs Pillow,
 which the app itself no longer uses. Run it only when the icon design changes.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-OUTPUT = Path(__file__).parent / "FocusGuard.ico"
+OUTPUT = Path(__file__).parent / "ProtBot.ico"
 
 # Windows picks from these: 16 for the tray and title bar, 32 for the taskbar,
 # 48 for the desktop, 256 for Explorer's large view and the installer.

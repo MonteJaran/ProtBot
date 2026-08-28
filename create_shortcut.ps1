@@ -1,4 +1,4 @@
-# Creates (or updates) the FocusGuard desktop shortcut.
+# Creates (or updates) the ProtBot desktop shortcut.
 #
 # Must stay compatible with Windows PowerShell 5.1, which is what ships with
 # Windows 10 and 11 and what `powershell` always resolves to. PowerShell 7-only
@@ -24,15 +24,15 @@ try {
         exit 0
     }
 
-    $lnk = Join-Path $desktop "FocusGuard.lnk"
-    $ico = Join-Path $dir "FocusGuard.ico"
+    $lnk = Join-Path $desktop "ProtBot.lnk"
+    $ico = Join-Path $dir "ProtBot.ico"
 
     $wsh = New-Object -ComObject WScript.Shell
     $sc  = $wsh.CreateShortcut($lnk)
     $sc.TargetPath       = $pythonw
     $sc.Arguments        = '"' + (Join-Path $dir 'main.py') + '"'
     $sc.WorkingDirectory = $dir
-    $sc.Description      = "FocusGuard - App Usage Monitor"
+    $sc.Description      = "ProtBot - App Usage Monitor"
     if (Test-Path $ico) { $sc.IconLocation = $ico }
     $sc.Save()
 

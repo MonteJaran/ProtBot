@@ -1,5 +1,5 @@
 """
-files_page.py - Files tab for FocusGuard.
+files_page.py - Files tab for ProtBot.
 Shows all tracked apps with their paths and running status.
 """
 
@@ -314,7 +314,7 @@ class FilesPage(ttk.Frame):
         Refuse to track a protected process, explaining why.
 
         Without this the user can add a core Windows binary and give it a
-        daily limit, and FocusGuard would then close it. See core/protected.py.
+        daily limit, and ProtBot would then close it. See core/protected.py.
         """
         if not is_protected(exe_name, exe_path):
             return False

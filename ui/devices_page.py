@@ -1,5 +1,5 @@
 """
-devices_page.py - Devices & Plan management tab for FocusGuard.
+devices_page.py - Devices & Plan management tab for ProtBot.
 
 Sections
 --------
@@ -691,7 +691,7 @@ class DevicesPage(ttk.Frame):
         threading.Thread(target=_work, daemon=True).start()
 
     def _open_upgrade(self):
-        webbrowser.open("https://focusguard.app/premium")
+        webbrowser.open("https://protbot.app/premium")
 
     def _copy(self, text: str):
         self.clipboard_clear()

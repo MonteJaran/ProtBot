@@ -15,7 +15,7 @@ Cloudflare Pages, or any static host. No backend required:
 
     {
       "version": "1.1.0",
-      "url": "https://focusguard.app/download",
+      "url": "https://protbot.app/download",
       "notes": "Fixes a crash when...",
       "critical": false
     }
@@ -35,7 +35,7 @@ from core.version import __version__
 log = get_logger("updates")
 
 # Where the manifest lives. Static file, no server needed.
-UPDATE_MANIFEST_URL = "https://focusguard.app/version.json"
+UPDATE_MANIFEST_URL = "https://protbot.app/version.json"
 
 # Short: this must never delay startup or hold the app open on shutdown.
 REQUEST_TIMEOUT = 8
@@ -85,7 +85,7 @@ def fetch_manifest(url: str = UPDATE_MANIFEST_URL, timeout: int = REQUEST_TIMEOU
     """
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": f"FocusGuard/{__version__}"},
+        headers={"User-Agent": f"ProtBot/{__version__}"},
         method="GET",
     )
     try:
@@ -165,6 +165,6 @@ def check_in_background(callback, url: str = UPDATE_MANIFEST_URL,
                 log.error("Update callback failed: %s", e)
 
     thread = threading.Thread(target=_run, daemon=True,
-                              name="FocusGuard-UpdateCheck")
+                              name="ProtBot-UpdateCheck")
     thread.start()
     return thread

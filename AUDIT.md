@@ -1,4 +1,4 @@
-# FocusGuard — Pre-release Readiness Audit
+# ProtBot — Pre-release Readiness Audit
 
 Scope: all 5,395 lines across 26 source files in `Software.zip` (Python 3 / Tkinter / SQLite).
 Findings are referenced by ID so they can be tracked as issues.
@@ -27,7 +27,7 @@ the Windows session.
 | ST-04 | *Partial* | pytest suite (65 tests), ruff, `pyproject.toml`, and a GitHub Actions workflow across Linux + Windows on Python 3.10 and 3.12. **Still needed:** monitor tests behind a psutil fake, and making the project an installable package instead of `sys.path.insert` |
 | ST-07 | *Partial* | Source extracted from `Software.zip` into the repo; `.claude/` and `__pycache__` untracked and gitignored. `debug.bat`, `debug_processes.py`, `install.bat` and `run.bat` no longer ship; `core/version.py` is the single source of truth and a test asserts `pyproject.toml` agrees with it |
 | SF-01 | **Fixed** | The kill path is now staged (`core/procutil.py`): the user gets a warning and a 60-second countdown, then WM_CLOSE is posted so the app runs its own save-and-exit path, then a wait, and only what refuses is terminated. Grace period is configurable and floored at 10s |
-| SF-02 | **Fixed** | `core/protected.py` denylists Windows critical processes, the shell, Task Manager and other user escape hatches, security software, and FocusGuard's own runtime. Enforced at three layers — the add dialogs, the process matcher, and the terminate call. Task Manager and PowerShell removed from the preloaded catalogue |
+| SF-02 | **Fixed** | `core/protected.py` denylists Windows critical processes, the shell, Task Manager and other user escape hatches, security software, and ProtBot's own runtime. Enforced at three layers — the add dialogs, the process matcher, and the terminate call. Task Manager and PowerShell removed from the preloaded catalogue |
 | SF-03 | **Fixed** | `create_shortcut.ps1` rewritten for Windows PowerShell 5.1; no PowerShell 7-only operators remain, and failure is now non-fatal to launch |
 | SF-06 | **Fixed** | `RLock` around every database read and write, and around the monitor's `active_sessions` / `running_apps` / notification state. Covered by a concurrency test with four writer threads |
 | SF-07 | **Fixed** | `PRAGMA user_version` plus a migration runner. A pre-versioning database is adopted rather than rejected, and a database from a newer build raises instead of being silently downgraded |
@@ -36,12 +36,12 @@ the Windows session.
 | BL-06 | **Fixed** | `delete_all_data()` now clears sessions *and* the tracked-app list, resets autoincrement counters, and VACUUMs; `delete_log_file()` removes the plaintext diagnostic log. The dialog now states exactly what was removed and says plainly that server-side data is not covered |
 | SF-04 | **Fixed** | Sessions are split at the date boundary: the old session is closed at 23:59:59 of its own day and a fresh one opened for the new day, so usage stops being filed under the wrong date and the daily counter no longer silently resets mid-session. The split runs *before* the interval is credited — crediting first files post-midnight time under yesterday |
 | SF-05 | **Fixed** | `core/activity.py` decides what counts: a gap longer than 1.5x the poll interval is capped (so an overnight sleep credits one interval, not eight hours), time past the idle threshold counts as nothing, and background apps do not accrue when `count_foreground_only` is on. Probes degrade to "cannot tell", in which case time counts rather than silently vanishing |
-| SF-10 | **Fixed** | `core/logging_setup.py` — rotating handler capped at 2x512 KB, dated timestamps, levels, and per-poll detail demoted to DEBUG (off by default). `FOCUSGUARD_LOG_LEVEL=DEBUG` turns it up. Rotated backups and the pre-1.0 `monitor.log` are now covered by data deletion |
+| SF-10 | **Fixed** | `core/logging_setup.py` — rotating handler capped at 2x512 KB, dated timestamps, levels, and per-poll detail demoted to DEBUG (off by default). `PROTBOT_LOG_LEVEL=DEBUG` turns it up. Rotated backups and the pre-1.0 `monitor.log` are now covered by data deletion |
 | SF-13 | **Fixed** | The handlers that hid real failures — UI refresh, device sync, session start/end, shutdown steps — now log with context. The few that remain silent are genuinely optional paths and say so in a comment |
 | ST-06 | *Partial* | `SetProcessDpiAwarenessContext` (per-monitor v2, falling back through two older APIs) called before the first Tk window, so the UI is no longer bitmap-stretched on high-DPI displays. 38 instances of 7-8pt text raised to 9pt. **Still needed:** keyboard navigation, screen-reader labelling, and a high-contrast mode |
 | BL-05 | **Fixed** | pystray (LGPL-3.0) replaced by `core/tray.py`, ctypes against Shell_NotifyIcon. Also drops Pillow from the runtime — the icon loads from the shipped `.ico` instead of being drawn at startup. Runtime dependencies are now psutil and plyer only, both permissively licensed |
-| ST-01 | **Fixed** | `FocusGuard.bat` builds a `.venv` and installs there instead of into the user's global Python, so it can no longer break their other projects. The auto-download of a Python installer is gone entirely. `packaging/focusguard.spec` gives a frozen build with no runtime pip at all |
-| ST-02 | *Partial* | `packaging/installer.iss` — per-user Inno Setup installer, stops a running instance before installing, removes the `Run` key on uninstall and offers to delete `%LOCALAPPDATA%\FocusGuard`. `packaging/build.ps1` runs tests and lint, generates the Windows version resource from `core/version.py`, builds, **smoke-tests that the frozen app stays running**, and signs with timestamping when a certificate is supplied. **Still needed:** an actual certificate, a first real Windows build, and an update mechanism |
+| ST-01 | **Fixed** | `ProtBot.bat` builds a `.venv` and installs there instead of into the user's global Python, so it can no longer break their other projects. The auto-download of a Python installer is gone entirely. `packaging/protbot.spec` gives a frozen build with no runtime pip at all |
+| ST-02 | *Partial* | `packaging/installer.iss` — per-user Inno Setup installer, stops a running instance before installing, removes the `Run` key on uninstall and offers to delete `%LOCALAPPDATA%\ProtBot`. `packaging/build.ps1` runs tests and lint, generates the Windows version resource from `core/version.py`, builds, **smoke-tests that the frozen app stays running**, and signs with timestamping when a certificate is supplied. **Still needed:** an actual certificate, a first real Windows build, and an update mechanism |
 | ST-03 | **Fixed** | All three antivirus triggers removed from the launcher: no global pip, no downloading and executing an unverified `.exe`, no `-ExecutionPolicy Bypass`. Build is one-folder rather than one-file (one-file unpacks to `%TEMP%` on every launch) and UPX is off. Tests fail the build if any of them return |
 | SF-11 | **Fixed** | Indices were added earlier; retention now closes the other half. `retention_days` defaults to 365 (0 keeps everything), pruned on the daily rollover rather than at startup so launch stays fast, and exposed in Settings — `PRIVACY.md` says the user can change it there, so a test asserts the control exists |
 | SF-08 | *Partial* | The `plan = "premium"` override is gone and the editable `plan` key with it. `core/licensing.py` is now the single gate: entitlement is cached signed and machine-bound, so hand-editing `config.json` invalidates it rather than granting premium; a verified licence survives 14 days offline so a dropped connection never revokes a paying customer; and a server error leaves the cached entitlement alone. `_activate_license` is a real flow off the UI thread. **Still needed:** the `/license/verify` endpoint and a merchant of record — those are the only missing pieces now |
@@ -138,11 +138,11 @@ the EU digital-consent floor at 13-16 depending on member state.
 **Fix:** minimum age in the terms, neutral age gate at first run, no email below the threshold.
 
 ### BL-09 · MEDIUM · Name clearance and third-party monitoring
-- "FocusGuard" is uncleared — run USPTO TESS and EUIPO eSearch before spending on branding.
-  Confirm you own `focusguard.app` (the upgrade button opens it).
+- "ProtBot" is uncleared — run USPTO TESS and EUIPO eSearch before spending on branding.
+  Confirm you own `protbot.app` (the upgrade button opens it).
 - The app can be installed on a machine another person uses and silently records them once
   minimized to tray. Engages monitoring-consent and two-party consent law. Keep the tray icon
-  permanently visible; state in the terms that FocusGuard is for monitoring your own device.
+  permanently visible; state in the terms that ProtBot is for monitoring your own device.
 
 ---
 
@@ -165,7 +165,7 @@ No denylist anywhere. "Add by file" accepts any executable including `csrss.exe`
 `CRITICAL_PROCESS_DIED` bugcheck. Not hypothetical: the preloaded catalogue ships **Task
 Manager** and **PowerShell** as targets. Limit Task Manager with auto-kill on and the 5-second
 watcher kills it every time the user opens it, locking them out of the tool they'd use to stop
-FocusGuard.
+ProtBot.
 
 **Fix:** hardcode a system-binary denylist; remove the System category from the preloaded list.
 
@@ -294,7 +294,7 @@ optional paths.
 ## Section C — Distribution and engineering standards
 
 ### ST-01 · CRITICAL · Launcher installs packages into the user's global Python at every startup
-`FocusGuard.bat:64-68`
+`ProtBot.bat:64-68`
 
 `pip install -r requirements.txt` runs on every launch against system-wide Python with
 `>nul 2>&1` hiding errors. It can upgrade/downgrade packages other projects depend on;
@@ -307,14 +307,14 @@ app directory with exact pinned versions and hashes.
 ### ST-02 · CRITICAL · No code signing, no installer, no auto-update
 Distribution is a zip of Python source plus a `.bat`. Unsigned → SmartScreen warning, which
 ends most installs for an app that reads your process list. No MSI/Inno package, no
-uninstaller (registry Run key, desktop shortcut and `%LOCALAPPDATA%\FocusGuard` all survive
+uninstaller (registry Run key, desktop shortcut and `%LOCALAPPDATA%\ProtBot` all survive
 deletion), and no update mechanism — you can never push a security fix to an existing install.
 
 **Fix:** PyInstaller → Inno Setup → code-signing certificate (~$200-400/yr, or Azure Trusted
 Signing). Add a version-endpoint update check and a proper uninstall entry.
 
 ### ST-03 · HIGH · Install script looks like malware to AV heuristics
-`FocusGuard.bat:44-50, 83`
+`ProtBot.bat:44-50, 83`
 
 Four behaviors scored together: `-ExecutionPolicy Bypass`; downloading and executing an `.exe`
 with no hash verification; enumerating all processes; terminating processes — including Task

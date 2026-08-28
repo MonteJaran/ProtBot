@@ -170,7 +170,7 @@ def test_an_untracked_app_is_ignored(harness):
 
 def test_an_overnight_sleep_does_not_book_eight_hours(harness):
     """
-    Was: shut the lid with Chrome open, resume, and FocusGuard had booked the
+    Was: shut the lid with Chrome open, resume, and ProtBot had booked the
     whole night as usage and closed Chrome immediately.
     """
     app_id = harness.db.add_tracked_app("Chrome", "chrome.exe")

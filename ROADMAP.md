@@ -1,4 +1,4 @@
-# FocusGuard Roadmap
+# ProtBot Roadmap
 
 Where planned features live so they are not forgotten — and so they stay **out**
 of the marketing surface until they actually work.

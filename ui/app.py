@@ -1,5 +1,5 @@
 """
-app.py - Main application window for FocusGuard.
+app.py - Main application window for ProtBot.
 """
 
 import tkinter as tk
@@ -21,7 +21,7 @@ log = get_logger("ui")
 
 class KillToast:
     """
-    A non-blocking on-screen toast that appears when FocusGuard force-closes
+    A non-blocking on-screen toast that appears when ProtBot force-closes
     an app. Stays on top, auto-dismisses after 5 seconds with a countdown bar.
     Must be created and managed on the main tkinter thread.
     """
@@ -53,7 +53,7 @@ class KillToast:
         body = tk.Frame(self._win, bg='#1a1a2e')
         body.pack(side='left', fill='both', expand=True, padx=(10, 10), pady=8)
 
-        tk.Label(body, text="\u26a0  App Closed by FocusGuard",
+        tk.Label(body, text="\u26a0  App Closed by ProtBot",
                  bg='#1a1a2e', fg='#e94560',
                  font=('Segoe UI', 9, 'bold')).pack(anchor='w')
 
@@ -402,7 +402,7 @@ class MainApp:
     # ── Window Setup ──────────────────────────────────────────────────────────
 
     def _setup_window(self) -> None:
-        self.root.title("FocusGuard \u2014 App Usage Tracker")
+        self.root.title("ProtBot \u2014 App Usage Tracker")
         self.root.geometry("900x650")
         self.root.minsize(800, 560)
         self.root.configure(bg=BG)
@@ -421,7 +421,7 @@ class MainApp:
         header.pack_propagate(False)
 
         tk.Label(
-            header, text="  FocusGuard",
+            header, text="  ProtBot",
             bg=BG3, fg=ACCENT,
             font=('Segoe UI', 14, 'bold'),
         ).pack(side='left', padx=(10, 4), pady=8)
@@ -533,7 +533,7 @@ class MainApp:
         bar.pack(fill='x', side='top')
 
         label = "Security update" if info.get("critical") else "Update available"
-        tk.Label(bar, text=f"  {label}: FocusGuard {version}",
+        tk.Label(bar, text=f"  {label}: ProtBot {version}",
                  bg='#1e3a5f', fg=TEXT,
                  font=('Segoe UI', 9, 'bold')).pack(side='left', pady=5)
 

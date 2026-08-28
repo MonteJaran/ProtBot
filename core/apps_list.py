@@ -937,8 +937,8 @@ DEFAULT_APPS = [
     },
     # ── System ───────────────────────────────────────────────────────────────
     # Task Manager and PowerShell are deliberately NOT offered here. They are
-    # in core/protected.py: FocusGuard must never be able to close the tools a
-    # user needs to inspect or stop FocusGuard, and an app that terminates
+    # in core/protected.py: ProtBot must never be able to close the tools a
+    # user needs to inspect or stop ProtBot, and an app that terminates
     # Task Manager on a loop is what antivirus heuristics score as a trojan.
     {
         "name": "Calculator",

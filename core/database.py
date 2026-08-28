@@ -1,5 +1,5 @@
 """
-database.py - SQLite storage for FocusGuard.
+database.py - SQLite storage for ProtBot.
 """
 
 import os
@@ -7,7 +7,12 @@ import sqlite3
 import threading
 from datetime import timedelta, date
 
-_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "FocusGuard")
+from core.paths import ensure_data_dir
+
+DB_FILENAME = "protbot.db"
+# HISTORICAL: the filename used before the rename. Never rename this constant
+# with the app — it is how an existing install's data gets found.
+LEGACY_DB_FILENAME = "focusguard.db"
 
 # Schema version. Bump this and add a matching entry to _MIGRATIONS whenever the
 # schema changes; the runner steps an existing database forward one version at a
@@ -68,9 +73,21 @@ class Database:
     def __init__(self, data_dir: str = "") -> None:
         # data_dir is injectable so tests can run against a temp directory
         # instead of the real %LOCALAPPDATA%.
-        self._dir = data_dir or _DATA_DIR
+        self._dir = data_dir or ensure_data_dir()
         os.makedirs(self._dir, exist_ok=True)
-        self._db_path = os.path.join(self._dir, "focusguard.db")
+        self._db_path = os.path.join(self._dir, DB_FILENAME)
+        # The database file was called protbot.db before the rename. Moving
+        # the whole folder (core/paths.py) does not rename the file inside it.
+        legacy_db = os.path.join(self._dir, LEGACY_DB_FILENAME)
+        if not os.path.exists(self._db_path) and os.path.isfile(legacy_db):
+            try:
+                for suffix in ("", "-wal", "-shm"):
+                    source = legacy_db + suffix
+                    if os.path.isfile(source):
+                        os.replace(source, self._db_path + suffix)
+            except OSError:
+                # Fall back to a fresh database rather than failing to launch.
+                self._db_path = os.path.join(self._dir, DB_FILENAME)
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         # check_same_thread=False silences Python's safety check without
         # providing any safety, and this connection is written from the monitor
@@ -114,7 +131,7 @@ class Database:
                 # Opened by a newer build. Leave it alone rather than corrupt it.
                 raise RuntimeError(
                     f"Database schema version {current} is newer than this "
-                    f"build supports ({SCHEMA_VERSION}). Please update FocusGuard."
+                    f"build supports ({SCHEMA_VERSION}). Please update ProtBot."
                 )
 
             for version in range(current + 1, SCHEMA_VERSION + 1):
@@ -388,7 +405,13 @@ class Database:
         """
         from core.logging_setup import log_paths
 
-        candidates = log_paths(self._dir) + [os.path.join(self._dir, "monitor.log")]
+        # Includes both pre-rename names: monitor.log (pre-1.0) and
+        # protbot.log (before the ProtBot rename).
+        candidates = log_paths(self._dir) + [
+            os.path.join(self._dir, "monitor.log"),
+            os.path.join(self._dir, "focusguard.log"),
+            os.path.join(self._dir, "focusguard.log.1"),
+        ]
         removed = False
         for path in candidates:
             try:

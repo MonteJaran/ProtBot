@@ -19,10 +19,10 @@ from core.version import APP_NAME, __version__
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PACKAGING = REPO_ROOT / "packaging"
 
-SPEC = PACKAGING / "focusguard.spec"
+SPEC = PACKAGING / "protbot.spec"
 ISS = PACKAGING / "installer.iss"
 BUILD_PS1 = PACKAGING / "build.ps1"
-LAUNCHER = REPO_ROOT / "FocusGuard.bat"
+LAUNCHER = REPO_ROOT / "ProtBot.bat"
 
 
 def read(path: Path) -> str:
@@ -53,14 +53,14 @@ def test_installer_license_file_exists():
 
 
 def test_icon_is_present():
-    assert (REPO_ROOT / "FocusGuard.ico").is_file()
+    assert (REPO_ROOT / "ProtBot.ico").is_file()
 
 
 def _icon_sizes():
-    """Sizes inside FocusGuard.ico, read from the header — no Pillow needed."""
+    """Sizes inside ProtBot.ico, read from the header — no Pillow needed."""
     import struct
 
-    data = (REPO_ROOT / "FocusGuard.ico").read_bytes()
+    data = (REPO_ROOT / "ProtBot.ico").read_bytes()
     _reserved, icon_type, count = struct.unpack("<HHH", data[:6])
     assert icon_type == 1, "not an .ico file"
     sizes = []

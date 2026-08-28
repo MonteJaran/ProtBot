@@ -80,7 +80,7 @@ def _cache_secret() -> str:
     # Machine-bound rather than a constant baked into the binary: a shared
     # constant would be extracted once and posted publicly, and this at least
     # makes a stolen config.json useless elsewhere.
-    return f"focusguard-entitlement-{_machine_binding()}"
+    return f"protbot-entitlement-{_machine_binding()}"
 
 
 # ── Reading the current entitlement ───────────────────────────────────────────
