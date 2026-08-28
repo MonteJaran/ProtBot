@@ -3,6 +3,7 @@ package app.protbot.data
 import android.content.Context
 import app.protbot.core.BlockPolicy
 import app.protbot.core.FocusHours
+import app.protbot.core.Sync
 import app.protbot.usage.UsageCollector
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -34,17 +35,47 @@ class UsageRepository private constructor(context: Context) {
         }
     }
 
-    /** The policy the blocker should enforce right now. */
+    /** Today's usage on this device, by package. */
+    suspend fun usageTodayByPackage(today: LocalDate = LocalDate.now()): Map<String, Long> =
+        dao.usageOn(today.toString()).associate { it.packageName to it.seconds }
+
+    /** The tracked apps, read once rather than observed. */
+    suspend fun trackedAppsOnce(): List<TrackedApp> = dao.allApps()
+
+    /**
+     * The policy the blocker should enforce right now.
+     *
+     * [remoteSeconds] is time spent on the user's other devices today, from
+     * `SyncClient.remoteSecondsByPackage`, and is added to this device's own
+     * usage before the policy sees it. That addition is the whole point of
+     * sync: an hour on the phone and an hour on the PC have to add up to the
+     * two-hour limit the user set, rather than each device allowing two.
+     *
+     * Empty when sync is off, has never succeeded, or its last figure is too
+     * old to trust — in which case this behaves exactly as it did before sync
+     * existed, enforcing against local usage only. Remote time can only ever
+     * add, never subtract; see `Sync.mergeAppTotal`.
+     */
     suspend fun currentPolicy(
         focusHours: FocusHours,
         blockingEnabled: Boolean,
         today: LocalDate = LocalDate.now(),
+        remoteSeconds: Map<String, Long> = emptyMap(),
     ): BlockPolicy {
         val apps = dao.enabledApps()
-        val usage = dao.usageOn(today.toString()).associate { it.packageName to it.seconds }
+        val local = usageTodayByPackage(today)
+        val combined = if (remoteSeconds.isEmpty()) local else {
+            (local.keys + remoteSeconds.keys).associateWith { pkg ->
+                Sync.mergeAppTotal(
+                    localSeconds = local[pkg] ?: 0L,
+                    groupSeconds = remoteSeconds[pkg] ?: 0L,
+                    uploadedSeconds = 0L,   // already subtracted by the client
+                )
+            }
+        }
         return BlockPolicy(
             limits = apps.associate { it.packageName to it.dailyLimitMinutes },
-            usedToday = usage,
+            usedToday = combined,
             focusHours = focusHours,
             enabled = blockingEnabled,
         )

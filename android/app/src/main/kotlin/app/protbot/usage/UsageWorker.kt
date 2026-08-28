@@ -2,6 +2,7 @@ package app.protbot.usage
 
 import android.content.Context
 import androidx.work.*
+import app.protbot.data.UsageRepository
 import java.util.concurrent.TimeUnit
 
 /**

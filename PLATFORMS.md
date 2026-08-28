@@ -6,7 +6,7 @@ Short answer to the two questions:
 - **Android — started.** See [`android/`](android/). It is a *second
   application*, not a build of this one: Tkinter does not run on Android and
   the enforcement mechanism is completely different. But the rules are shared,
-  and the shared module compiles and passes 67 tests today.
+  and the shared module compiles and passes 93 tests today.
 - **iOS — not started**, and harder than Android.
 
 This document explains the constraints, so decisions are made with the real
@@ -107,11 +107,18 @@ Written, not yet built; it needs the SDK.
 | Background work | `WorkManager`, plus per-manufacturer battery-optimisation fights |
 | Storage | Room, not SQLite-via-Python |
 | Store review | Play, with an accessibility justification |
-| **Shared with the desktop** | The rules — focus hours, limit semantics, accounting guards, the protected list |
+| **Shared with the desktop** | The rules — focus hours, limit semantics, accounting guards, the protected list, and the sync protocol |
 
 The rules being shared is the part that matters: both platforms enforce the
 same thing because both call the same tested logic, rather than two
 reimplementations drifting apart.
+
+That now includes the sync rules, which is what makes a limit mean one thing
+across two devices — an hour on the phone plus an hour on the PC reaches a
+two-hour limit, instead of each device allowing the full two. See
+[`android/README.md`](android/README.md) and `core/syncproto.py`. The protocol
+is defined and both clients are written and tested; **the server that would sit
+between them is not built**, which is the one piece still missing.
 
 ---
 

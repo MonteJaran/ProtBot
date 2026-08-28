@@ -14,6 +14,7 @@ from core.config import Config
 from core.consent import has_consented, record_consent, show_consent_dialog
 from core.database import Database
 from core.monitor import Monitor
+from core.syncclient import SyncClient
 from core.logging_setup import get_logger
 from core.version import __version__
 from ui.app import MainApp
@@ -108,7 +109,13 @@ def main() -> None:
             root.destroy()
             sys.exit(0)
 
-    monitor = Monitor(db, config)
+    # Cross-device sync. Constructed always, but inert until the user
+    # registers a device — see SyncClient.enabled — so an install that never
+    # turns it on makes no network requests and behaves exactly as before.
+    sync_client = SyncClient(db, config)
+    sync_client.start()
+
+    monitor = Monitor(db, config, sync_client=sync_client)
     monitor.start()
 
     app = MainApp(root, db, config, monitor)
@@ -131,6 +138,7 @@ def main() -> None:
         # Each step is independent: one failing must not strand the others and
         # leave the process alive, but it should still be recorded.
         for label, step in (("stop monitor", monitor.stop),
+                            ("stop sync", sync_client.stop),
                             ("close database", db.close),
                             ("destroy window", root.destroy)):
             try:

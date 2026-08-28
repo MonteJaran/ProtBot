@@ -9,7 +9,7 @@ is tested against the same cases.
 
 | Module | State |
 |---|---|
-| `core/` | **Compiles and passes 67 tests.** Pure Kotlin/JVM, no Android imports, no SDK needed. |
+| `core/` | **Compiles and passes 93 tests.** Pure Kotlin/JVM, no Android imports, no SDK needed. |
 | `app/` | **Written, never built.** Needs the Android SDK, which this machine does not have. |
 
 Run the verified part anywhere with a JDK:
@@ -114,10 +114,45 @@ The limit sentinels matter most. On the desktop, `-1` multiplied out to a
 negative limit and produced a 0% usage reading, so a blocked app never
 triggered. `LimitsTest` carries that case across so it cannot happen twice.
 
+## Sharing totals with the PC
+
+This is the point of having two apps rather than two products: a two-hour
+limit means two hours across both devices, not two hours each.
+
+`core/Sync.kt` holds the rules, and its Python twin is `core/syncproto.py`.
+Both are tested against the same cases, because the two have to agree — the
+canonical key is the only thing joining `Discord.exe` on the PC to
+`com.discord` here, and if they disagree the user gets two half-counted apps
+and no error anywhere to explain it.
+
+Three decisions that are not the obvious ones:
+
+- **Uploads are cumulative.** Sending "seconds since the last upload"
+  double-counts every time a response is lost and the client retries. An
+  upload carries today's running total instead, so re-sending it changes
+  nothing and a phone that was offline all morning catches up in one request.
+- **The day is the device's day.** A server bucketing by UTC puts a Belgrade
+  evening into tomorrow, and the user watches their limit reset at 2am.
+- **Merging is not "take the bigger number".** The group total already
+  contains this device's last upload, which is stale by up to the upload
+  interval. Our own contribution is subtracted before the remainder is added
+  to the live local figure. `SyncTest` carries a case for each way the naive
+  version goes wrong, including the one where usage vanishes at midnight.
+
+Sync stays off until the user registers a device, and a server that is down,
+empty or hostile can only ever result in local usage being enforced — never a
+looser limit than this phone measured itself.
+
+**No server implements the protocol yet.** `server/models.py` defines the wire
+format and documents what a server has to do with it; the client is tested
+against a fake transport, so what is verified is how it behaves on every
+response shape a broken server could produce.
+
 ## Still to build
 
-- Sync client against the existing protocol, so phone and PC share totals
 - App picker (the `<queries>` block is declared; the UI is not written)
 - Limit editing and the insights screen
-- Retention scheduling — `UsageRepository.prune` exists, nothing calls it yet
+- Manually linking an app on one device to the same app on the other, for the
+  packages named after a vendor rather than the product — the canonical key is
+  a good guess, not a guarantee
 - The first actual build, on a machine with the SDK

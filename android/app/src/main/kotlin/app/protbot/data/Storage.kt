@@ -37,6 +37,12 @@ interface ProtBotDao {
     @Query("SELECT * FROM tracked_apps WHERE enabled = 1")
     suspend fun enabledApps(): List<TrackedApp>
 
+    /** Every tracked app, read once. Sync needs the disabled ones too: the
+     *  user may have paused a limit on this device while the other still
+     *  counts it, and dropping the row would lose its server id. */
+    @Query("SELECT * FROM tracked_apps ORDER BY label")
+    suspend fun allApps(): List<TrackedApp>
+
     @Upsert
     suspend fun upsertApp(app: TrackedApp)
 

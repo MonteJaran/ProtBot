@@ -3,10 +3,11 @@
 Current state and remaining work. `AUDIT.md` is the historical record of what
 was found and fixed; this is the forward-looking list.
 
-**Where things stand:** 366 tests green on Python 3.10 and 3.12, lint clean.
-Every safety-critical and legal finding from the audit is closed or has its
-remaining part named below. What is left splits cleanly into *things only you
-can do* and *things anyone can code*.
+**Where things stand:** 463 Python tests green on 3.10 and 3.12, plus 93
+Kotlin tests for the shared Android rules; lint clean. Every safety-critical
+and legal finding from the audit is closed or has its remaining part named
+below. What is left splits cleanly into *things only you can do* and *things
+anyone can code*.
 
 ---
 
@@ -20,6 +21,7 @@ These are the real gates. No amount of coding moves them.
 | 2 | **Microsoft Store developer account** | ~$19 one-time, possibly free now | Microsoft signs Store packages, so **SmartScreen stops warning** — same result as a €300/yr certificate. Also gives you a distribution channel and a payment system. Cheapest unlock on this list by a wide margin. |
 | 3 | **Merchant of record** (Paddle or Lemon Squeezy) | ~5% of revenue | The client licensing gate is built. Without this there is nothing to sell keys with. Both handle EU VAT for you. |
 | 4 | **A `/license/verify` endpoint** | A morning's work on the server | The client calls it and handles every failure mode. It does not exist. |
+| 4b | **The sync server** — `/register`, `/apps`, `/upload`, `/sync` | A day, on top of item 6 | Both clients are written and tested; there is nothing between them. `server/models.py` defines the wire format and spells out the three things a server must get right (cumulative totals, the client's date, matching on the canonical key). Until it exists, the phone and the PC each count their own time. |
 | 5 | **Lawyer review of PRIVACY.md, plus ToS and a EULA** | A few hundred euros | The policy is accurate to the code but was not written by a lawyer. You also have no terms and no EULA at all. |
 | 6 | **Get the server source into git** | An afternoon | `server/` holds Pydantic models and nothing else. The deployed function holding user emails is unversioned, unreviewed and unbacked-up. |
 | 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | Cheaper now than after you have users. Also confirm you own the domain. |
@@ -75,15 +77,19 @@ In `ROADMAP.md`, all buildable, none blocking:
 pattern recognition over your own history (plain statistics, no model needed),
 predictive alerts, PDF/Excel export, team features (needs #1 and sync first).
 
-### 6. Rename to ProtBot
-The code says ProtBot everywhere — `core/version.py`, the tray, the
-installer, the `.bat`, the icon, and **the data directory
-`%LOCALAPPDATA%\ProtBot`**.
+### 6. ~~Rename to ProtBot~~ — DONE
+The code says ProtBot everywhere, and `core/paths.py` migrates an existing
+`%LOCALAPPDATA%\FocusGuard` folder on first run. `LEGACY_APP_NAME` in that file
+is the only thing that finds a previous install's data and **must never be
+renamed with the app**; there is a test that fails if it is.
 
-Not cosmetic. Done properly it needs a migration that moves the old data
-directory on first run, care with the Inno `AppId` so updates replace rather
-than stack, and ~40 files updated. About an hour. **Much cheaper before anyone
-installs than after.**
+### 7. Linking apps across devices by hand
+`syncproto.canonical_app_key` joins the same app on two devices by normalising
+its name, and it is a good guess rather than a guarantee — a package named
+after its vendor instead of its product will not match the desktop executable.
+A small screen letting the user say "these two are the same app" closes the
+gap. Nothing depends on it: an unmatched app simply counts per-device, which is
+the behaviour without sync.
 
 ---
 
@@ -101,17 +107,32 @@ Recorded so nobody rediscovers them as bugs.
 - **Premium gates nothing yet.** `_PREMIUM_FEATURES` is deliberately empty — the
   paid tier does not gate a single shipped feature. That is honest, and it is
   also the reason there is nothing to sell.
+- **Sync stops enforcing after two hours offline.** A group total older than
+  that is dropped and each device falls back to its own usage. Enforcing a
+  limit against a two-hour-old guess is the worse failure.
+- **The Android app has never been compiled.** The shared rules have; the
+  Android layer needs an SDK this machine does not have.
 
 ---
 
 ## Android and the app stores
 
-See [`PLATFORMS.md`](PLATFORMS.md). The Microsoft Store is the right target.
-Android and iOS would each be a **separate application** — Tkinter does not run
-on either, Android forbids listing or closing other apps (the sanctioned route
-is `UsageStatsManager` plus an `AccessibilityService`, which Google restricts
-heavily), and iOS needs an entitlement Apple grants case by case. Nothing but
-the sync protocol would be reused.
+See [`PLATFORMS.md`](PLATFORMS.md) and [`android/README.md`](android/README.md).
+
+Android is a **separate application**, not a build of this one — Tkinter does
+not run there, and Android forbids listing or closing other apps, so tracking
+goes through `UsageStatsManager` and blocking through an `AccessibilityService`.
+What is shared is the rules: focus hours, limit semantics, usage accounting,
+the protected list and the sync protocol all live in one place and are held to
+the same test cases on both sides.
+
+State: `android/core/` compiles and passes 93 tests. `android/app/` is written
+but **has never been built** — this machine has no Android SDK. iOS is not
+started and needs an entitlement Apple grants case by case.
+
+Cross-device sync is written on both platforms and wired into both limit
+checks, so an hour on the phone plus an hour on the PC reaches a two-hour
+limit. The server it talks to does not exist yet — item 4b above.
 
 ## Suggested order
 

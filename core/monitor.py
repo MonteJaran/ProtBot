@@ -62,9 +62,13 @@ class Monitor:
     from the monitor thread (UI must use root.after() if they touch widgets).
     """
 
-    def __init__(self, db, config) -> None:
+    def __init__(self, db, config, sync_client=None) -> None:
         self.db = db
         self.config = config
+        # Optional core.syncclient.SyncClient. When present, a limit counts
+        # time spent on the user's other devices too. None means local-only,
+        # which is what every unregistered install does. See _usage_today_sec.
+        self.sync_client = sync_client
         self._thread = None  # type: threading.Thread
         self._stop_event = threading.Event()
 
@@ -501,19 +505,43 @@ class Monitor:
 
     def _usage_today_sec(self, app_id: int) -> int:
         """
-        Today's usage, including what the running session has accrued since the
-        last checkpoint.
+        Today's usage for the limit check, across every device the user linked.
 
-        The database already holds everything up to `written_sec`; anything
-        beyond that is in memory only, so the un-checkpointed remainder is what
-        gets added. Without this the limit check lags by up to a poll interval.
+        Three parts, in order:
+          * what the database holds, up to the session's last checkpoint;
+          * what the running session has accrued since — in memory only, so
+            without it the limit check lags by up to a poll interval;
+          * what other devices reported for this app today, if sync is on.
+
+        Every limit decision in this class goes through this one function, so
+        adding the third part here is what makes an hour on the phone and an
+        hour on the PC add up to the two-hour limit the user set, rather than
+        each device quietly allowing the full two on its own.
         """
         total = self.db.get_today_usage_sec(app_id)
         with self._lock:
             session = self.active_sessions.get(app_id)
             if session and session["date"] == datetime.now().date():
                 total += max(0, session["counted_sec"] - session["written_sec"])
-        return int(total)
+        return int(total) + self._remote_usage_sec(app_id)
+
+    def _remote_usage_sec(self, app_id: int) -> int:
+        """
+        Seconds this app was used today on the user's other devices.
+
+        0 whenever sync is off, has never succeeded, or the last figure is too
+        old to trust — see syncclient.remote_seconds_for. The failure mode is
+        deliberately "local usage only": a sync problem must never be able to
+        make a limit stricter than the user's own machine can account for, and
+        it must certainly never raise into the poll loop that enforces limits.
+        """
+        if self.sync_client is None:
+            return 0
+        try:
+            return max(0, int(self.sync_client.remote_seconds_for(app_id)))
+        except Exception as e:
+            log.debug("Could not read synced usage for app %s: %s", app_id, e)
+            return 0
 
     def _apply_retention(self) -> int:
         """

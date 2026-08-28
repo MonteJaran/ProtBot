@@ -49,8 +49,12 @@ you do, the following is sent to our server:
   list. Hostnames often contain a person's name.
 - **An email address, only if you type one** — the field is optional. If you
   leave it blank, no email is sent.
-- **Usage totals** — for each app you track, the app's name, category and
-  seconds used, uploaded roughly every 30 minutes.
+- **Usage totals** — for each app you track, a simplified form of the app's
+  name, its category, and seconds used, uploaded roughly every 30 minutes.
+  The name is reduced to a plain key ("Some App.exe" becomes "someapp") so the
+  same app on your PC and your phone can be recognised as one thing. Each
+  upload is the running total for the day, not a running log — so the server
+  holds one number per app per day, not a record of when you used it.
 
 The server is operated on Google Cloud (Firebase Cloud Functions) in the United
 States. If you are in the EU or UK, this means your data is transferred outside

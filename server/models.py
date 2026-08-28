@@ -3,6 +3,37 @@ models.py — Minimal Pydantic request/response models.
 
 Key design: single-char JSON keys to shrink every payload.
 Upload cycle: every 30 minutes.
+
+The clients are core/syncproto.py (desktop) and
+android/core/.../Sync.kt (Android). Both are written against the semantics
+below and tested against them; a server that implements this file differently
+will produce wrong totals rather than errors, so read the three notes before
+building one.
+
+  1. **Uploads are cumulative, not deltas.** `UploadReq.a` carries each app's
+     running total for the day named in `z`, not the seconds since the last
+     upload. Store it with `max(stored, received)` per (device, app, date).
+     That makes a retry after a lost response a no-op, makes out-of-order
+     arrivals settle correctly, and lets a device that was offline for six
+     hours catch up in one request. Adding deltas instead double-counts every
+     retried upload, and there is no acknowledgement scheme that fixes it
+     without becoming a transaction log.
+
+  2. **The date is the client's, not the server's.** `UploadReq.z` is the
+     device's local date and must be stored verbatim. A server bucketing by
+     its own UTC date puts a Belgrade evening into tomorrow, and the user
+     watches their daily limit reset at 2am.
+
+  3. **App identity is the canonical key.** `AppSyncReq.a` sends
+     `syncproto.canonical_app_key(name)`, not the display name — the desktop
+     knows the app as "Discord.exe" and the phone as "com.discord", and they
+     have to land in one row. The server matches on that key within a device
+     group and assigns one server id.
+
+`SyncResp.apps` returns the group total per app, including the requesting
+device's own last upload. Clients subtract their own contribution before
+merging; see syncproto.merge_app_total for why that is not the same as taking
+the larger of the two numbers.
 """
 
 from pydantic import BaseModel
@@ -12,6 +43,7 @@ from pydantic import BaseModel
 
 class RegisterReq(BaseModel):
     e: str | None = None   # email — discarded immediately after response
+    n: str | None = None   # device label, shown only in the user's device list
 
 class RegisterResp(BaseModel):
     id: str                   # 24-char device_id

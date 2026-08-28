@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.protbot.permissions.Permissions
+import app.protbot.sync.SyncWorker
 import app.protbot.usage.UsageWorker
 
 class MainActivity : ComponentActivity() {
@@ -19,6 +20,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         UsageWorker.schedule(this)
+        // Scheduled even when sync is off: the same job runs the retention
+        // sweep, and it returns immediately when there is no device id. Both
+        // are enqueueUniquePeriodicWork with KEEP, so this is a no-op after
+        // the first launch.
+        SyncWorker.schedule(this)
         setContent { MaterialTheme { HomeScreen() } }
     }
 }

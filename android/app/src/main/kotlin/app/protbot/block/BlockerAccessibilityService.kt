@@ -3,10 +3,19 @@ package app.protbot.block
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
-import app.protbot.core.Limits
-import app.protbot.core.Protected
 import app.protbot.core.BlockDecision
 import app.protbot.core.BlockPolicy
+import app.protbot.core.Limits
+import app.protbot.core.Protected
+import app.protbot.data.Settings
+import app.protbot.data.UsageRepository
+import app.protbot.sync.SyncClientFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Notices a blocked app coming to the foreground and puts a screen over it.
@@ -27,9 +36,14 @@ import app.protbot.core.BlockPolicy
  */
 class BlockerAccessibilityService : AccessibilityService() {
 
-    /** Set by the app; null until the first policy load. */
+    /**
+     * What the service enforces. Null until the first load, and every event is
+     * dropped until then — refusing to guess is the right failure here.
+     */
     @Volatile
     var policy: BlockPolicy? = null
+
+    private val scope = CoroutineScope(SupervisorJob())
 
     /**
      * The package we most recently acted on.
@@ -44,6 +58,48 @@ class BlockerAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         lastBlocked = null
+        startPolicyRefresh()
+    }
+
+    /**
+     * Keep `policy` current.
+     *
+     * The service cannot query the database on an accessibility event: that
+     * callback runs on the main thread and is expected to return immediately,
+     * and a disk read there is felt as the whole phone stuttering. So the
+     * policy is loaded off-thread on a tick and the event handler only reads a
+     * value already in memory.
+     *
+     * The interval is a deliberate trade. Longer, and usage accrued since the
+     * last refresh is not counted, so an app can run over its limit for up to
+     * that long. Shorter, and a background service is hitting the database
+     * every few seconds for the life of the process.
+     */
+    private fun startPolicyRefresh() {
+        scope.launch {
+            val repository = UsageRepository.get(applicationContext)
+            val settings = Settings(applicationContext)
+            val sync = SyncClientFactory.create(applicationContext, repository)
+
+            while (isActive) {
+                try {
+                    policy = repository.currentPolicy(
+                        focusHours = settings.focusHours,
+                        blockingEnabled = settings.blockingEnabled,
+                        // Time on the user's other devices. Empty when sync is
+                        // off or its last figure is stale, in which case this
+                        // enforces local usage only.
+                        remoteSeconds = sync.remoteSecondsByPackage(),
+                    )
+                } catch (e: Exception) {
+                    // Keep the previous policy rather than dropping to null: a
+                    // transient database error must not silently disable
+                    // blocking until the next successful load.
+                    android.util.Log.w(TAG, "Could not refresh the block policy", e)
+                }
+                delay(POLICY_REFRESH_MS)
+            }
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -97,7 +153,17 @@ class BlockerAccessibilityService : AccessibilityService() {
         lastBlocked = null
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        // The user turned the service off in Settings. Leaving the refresh
+        // loop running would keep reading the database for a service that is
+        // no longer allowed to act on what it finds.
+        scope.cancel()
+        return super.onUnbind(intent)
+    }
+
     companion object {
+        private const val TAG = "ProtBotBlocker"
+
         /**
          * How long before the same package can be blocked again.
          *
@@ -105,5 +171,8 @@ class BlockerAccessibilityService : AccessibilityService() {
          * short enough that reopening it a moment later is still caught.
          */
         const val REBLOCK_COOLDOWN_MS = 1_500L
+
+        /** How often the policy is reloaded. See startPolicyRefresh. */
+        const val POLICY_REFRESH_MS = 60_000L
     }
 }
