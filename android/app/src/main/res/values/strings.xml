@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ProtBot</string>
+    <!-- Shown in Android's accessibility settings list. This is the text that
+         has to make the purpose obvious, both to the user and to Play review. -->
+    <string name="blocker_service_label">ProtBot app blocking</string>
+    <string name="blocker_service_description">
+        Lets ProtBot notice when an app you have set a limit on comes to the
+        front, so it can show your block screen. ProtBot does not read the
+        content of any app.
+    </string>
+</resources>

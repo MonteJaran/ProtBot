@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ProtBot" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- The block screen covers the app being blocked, so it is opaque and
+         has no action bar to tap around. -->
+    <style name="Theme.ProtBot.Block" parent="Theme.ProtBot">
+        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowIsTranslucent">false</item>
+    </style>
+</resources>

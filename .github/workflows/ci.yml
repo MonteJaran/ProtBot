@@ -99,3 +99,23 @@ jobs:
         run: |
           python -m pip install pytest
           python -m pytest tests/test_packaging_build.py -v
+
+  android-core:
+    name: Android shared rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Only the :core module, which is pure Kotlin/JVM and needs no Android
+      # SDK. The :app module is excluded from the build unless ANDROID_HOME is
+      # set, so this runs the shared rules everywhere.
+      - name: Run the shared rule tests
+        working-directory: android
+        run: |
+          chmod +x ./gradlew 2>/dev/null || true
+          gradle :core:test --no-daemon || ./gradlew :core:test --no-daemon

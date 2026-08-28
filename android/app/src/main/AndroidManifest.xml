@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      PACKAGE_USAGE_STATS is not a runtime permission. It cannot be requested
+      with a dialog: the user has to be sent to
+      Settings > Special app access > Usage access and grant it by hand.
+      Without it, queryEvents returns nothing at all.
+
+      This is the Android replacement for the desktop app's process list.
+      getRunningAppProcesses has returned only your own process since 5.1.
+    -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+    <!-- Drawing the block screen over the app being blocked. Also a manual
+         Settings grant, via ACTION_MANAGE_OVERLAY_PERMISSION. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Limit warnings and the persistent collector notification. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Re-arm the collector after a reboot, or usage silently stops. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Optional device sync only. The app is fully usable offline. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      Android 11+ hides the installed app list unless you declare what you
+      need. QUERY_ALL_PACKAGES is a sensitive permission Google reviews
+      closely; a <queries> block is the narrower, defensible option and is
+      enough to resolve labels and icons for packages the user picks.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".ProtBotApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ProtBot">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          The screen shown over a blocked app. excludeFromRecents and
+          noHistory keep it from piling up in the recents list, and
+          singleInstance stops a second copy launching over the first.
+        -->
+        <activity
+            android:name=".block.BlockScreenActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:theme="@style/Theme.ProtBot.Block" />
+
+        <!--
+          The blocker. This is the only way on Android to notice an app coming
+          to the foreground and act on it — there is no equivalent of the
+          desktop version's TerminateProcess.
+
+          Google reviews accessibility use closely: the declared
+          accessibilityServiceConfig and the in-app explanation both have to
+          make the purpose obvious. See android/README.md.
+        -->
+        <service
+            android:name=".block.BlockerAccessibilityService"
+            android:exported="false"
+            android:label="@string/blocker_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/blocker_service_config" />
+        </service>
+
+        <receiver
+            android:name=".usage.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>

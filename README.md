@@ -24,6 +24,7 @@ records. Nothing is monitored until you accept it.
 ## Layout
 
 ```
+android/    the Android app — see android/README.md
 core/       monitoring, storage, config, consent gate, logging,
             protected-process denylist, staged app closing,
             usage-accounting rules, Win32 tray
@@ -51,7 +52,8 @@ a byte-compile of the Tk modules, and a real install of `requirements.txt`.
 | [`AUDIT.md`](AUDIT.md) | Full readiness audit — legal, safety, and engineering findings with a phased plan |
 | [`ROADMAP.md`](ROADMAP.md) | Planned features and what each one is blocked on |
 | [`PRIVACY.md`](PRIVACY.md) | Privacy policy (draft — needs legal review) |
-| [`PLATFORMS.md`](PLATFORMS.md) | Stores, and why Android/iOS would be a separate app rather than a build target |
+| [`PLATFORMS.md`](PLATFORMS.md) | Stores, and how the Android version relates to this one |
+| [`android/README.md`](android/README.md) | The Android app: what is verified, what needs the SDK |
 | [`BUILD.md`](BUILD.md) | Building, signing, and the Microsoft Store route past SmartScreen |
 
 ## Three rules for contributors

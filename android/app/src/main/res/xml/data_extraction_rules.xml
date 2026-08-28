@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Usage history is personal and stays on the device: it is not included in
+     cloud backup or device-to-device transfer. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="protbot.db" />
+        <exclude domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="protbot.db" />
+    </device-transfer>
+</data-extraction-rules>

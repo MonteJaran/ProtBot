@@ -3,13 +3,14 @@
 Short answer to the two questions:
 
 - **Microsoft Store — yes.** ProtBot is a Windows app and that is its store.
-- **Everything else — no.** Not "port it", not "add a build target". A phone
-  version is a **different application**, written from scratch, in a different
-  language, using a completely different mechanism to do the one thing this app
-  exists to do.
+- **Android — started.** See [`android/`](android/). It is a *second
+  application*, not a build of this one: Tkinter does not run on Android and
+  the enforcement mechanism is completely different. But the rules are shared,
+  and the shared module compiles and passes 67 tests today.
+- **iOS — not started**, and harder than Android.
 
-This document explains why, so the decision is made with the real numbers
-rather than by discovering it three weeks in.
+This document explains the constraints, so decisions are made with the real
+numbers rather than by discovering them three weeks in.
 
 ---
 
@@ -63,18 +64,21 @@ changes, notices the blocked app coming to the foreground, and immediately
 launches your own full-screen overlay or sends the user home. Combined with
 `SYSTEM_ALERT_WINDOW` for the overlay.
 
-That works. It is also the single riskiest dependency you could build on.
+That works, and it is how every app in this category ships — StayFree,
+ActionDash, Freedom and Opal all do it. It is also the part most exposed to a
+policy change, which is worth designing around rather than worrying about.
 
-### The Play Store problem
+### Play Store review
 
-Google restricts `AccessibilityService` heavily and has tightened it repeatedly.
-Policy is that accessibility APIs must be used for accessibility purposes; app
-blockers are a contested category, and apps in it have been removed, forced to
-re-architect, or held in review for a long time. You must declare the use in
-Play Console and justify it.
+Google reviews `AccessibilityService` use closely and has tightened the rules
+several times. You must declare the use in Play Console and justify it, and
+apps that were vague about it have been removed or held in review.
 
-This is not a hypothetical risk to plan around later. It is the load-bearing
-mechanism of the entire product, and the platform owner can withdraw it.
+Apps in this category do ship, though — the bar is making the purpose
+unmistakable. `android/` is built for that: it requests
+`canRetrieveWindowContent="false"`, only `typeWindowStateChanged`, and a
+narrow `<queries>` block instead of `QUERY_ALL_PACKAGES`. Asking for less than
+you could is the whole strategy.
 
 ### And the competition is preinstalled
 
@@ -83,7 +87,16 @@ that controls the APIs you would be fighting to use. Screen Time does the same
 on iOS. On Windows there is no equivalent — which is a real part of why the
 desktop version has a reason to exist at all.
 
-### What an Android version would actually cost
+### What has been built
+
+`android/core/` — the shared rules, ported from the Python and held to the same
+test cases. Compiles and passes without the Android SDK.
+
+`android/app/` — the Android layer: `UsageStatsManager` collection, the
+accessibility blocker, Room storage, the permission flow, the block screen.
+Written, not yet built; it needs the SDK.
+
+### What the rest would cost
 
 | Piece | Reality |
 |---|---|
@@ -94,10 +107,11 @@ desktop version has a reason to exist at all.
 | Background work | `WorkManager`, plus per-manufacturer battery-optimisation fights |
 | Storage | Room, not SQLite-via-Python |
 | Store review | Play, with an accessibility justification |
-| **Reusable from this repo** | **The sync protocol and server. That is all.** |
+| **Shared with the desktop** | The rules — focus hours, limit semantics, accounting guards, the protected list |
 
-Realistically 6–10 weeks for a competent Android developer to reach parity with
-what ProtBot does today, and the result shares no code with it.
+The rules being shared is the part that matters: both platforms enforce the
+same thing because both call the same tested logic, rather than two
+reimplementations drifting apart.
 
 ---
 
@@ -121,26 +135,27 @@ it there is no legitimate way to build this on iOS at all.
 |---|---|---|
 | **Microsoft Store** | **Yes** | The right move. Microsoft signs the package, so SmartScreen stops warning — the same result as a €300/yr certificate for roughly $19. See `BUILD.md`. |
 | Direct download | Yes | Needs a code-signing certificate to avoid the warning. |
-| Google Play | Only after an Android rewrite | Plus accessibility-policy risk |
-| Apple App Store | Only after an iOS rewrite | Plus an entitlement Apple may decline |
+| Google Play | Once `android/` is finished and built | Needs the accessibility declaration |
+| Apple App Store | Only after an iOS app is written | Plus an entitlement Apple may decline |
 | Mac App Store | Effectively no | Sandboxing forbids controlling other apps; Mac blockers ship outside the store |
 
 ---
 
-## The recommendation
+## On sequencing
 
-**Do not start Android now.** Not because it is a bad idea eventually, but
-because of the order:
+The Android app now exists in outline, but the ordering argument still holds:
 
 1. ProtBot has **zero users** and has **never been built on Windows**.
 2. It **cannot take money** yet — no merchant of record, no licence endpoint.
-3. An Android version would be a second product with zero shared code, built
-   on a mechanism the platform owner actively restricts, competing with a free
-   preinstalled Google app.
+3. The Android app is a second product to support, competing with a free
+   preinstalled Google app — even with the rules shared, the UI, storage,
+   permissions and store listing are all separate work.
 
 Ship the Windows version through the Microsoft Store. Find out whether anyone
 wants this at all. If a few hundred people do, and they ask for a phone
-version, *then* the Android question is worth 6–10 weeks — and you will know
-what to build because they will have told you.
+version, *then* finishing Android is worth the remaining effort — and you will
+know what to build because they will have told you.
 
-Building it now means two unfinished products instead of one finished one.
+The risk is two unfinished products instead of one finished one — so treat the
+Android module as groundwork that is ready when you are, not as a second track
+to run in parallel.

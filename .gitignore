@@ -29,3 +29,10 @@ packaging/version_info.txt
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Android / Gradle
+android/.gradle/
+android/**/build/
+android/local.properties
+*.apk
+*.aab
