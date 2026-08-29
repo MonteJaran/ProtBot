@@ -70,6 +70,11 @@ any of it. The first entry under a real version number will be written when
   `requirements.lock` and publishes it as a build artifact on every push —
   Regulation (EU) 2024/2847 requires one for products with digital elements
   sold in the EU.
+- **Linking apps across devices by hand.** The automatic join
+  (`syncproto.canonical_app_key`) is best-effort and cannot resolve a package
+  named after its vendor without a brand list. The Files tab's app-edit
+  dialog now has a "Sync Name" field for exactly that case: type the same
+  word for one app on both devices and it overrides the automatic key.
 
 ### Changed
 

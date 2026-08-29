@@ -394,7 +394,7 @@ class SyncClient:
         if not missing:
             return
 
-        payload = syncproto.build_app_sync(self.device_id, apps)
+        payload = syncproto.build_app_sync(self.device_id, apps, self._app_aliases())
         if not payload:
             return
 
@@ -412,6 +412,10 @@ class SyncClient:
 
     def _app_id_map(self) -> dict:
         raw = self.config.get("server_app_ids", {}) or {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _app_aliases(self) -> dict:
+        raw = self.config.get("app_aliases", {}) or {}
         return raw if isinstance(raw, dict) else {}
 
     def _server_id_for(self, local_app_id: int) -> int:
@@ -495,3 +499,47 @@ def unregister_device(config) -> None:
     config.set("server_app_ids", {})
     config.set("linked_devices", [])
     log.info("Device unregistered; sync is off.")
+    # app_aliases is deliberately left alone: it is the user's own record of
+    # which apps are the same product on another device, not server state.
+    # Losing it on every re-registration would make them retype it each time.
+
+
+# ── Hand-linking apps across devices ────────────────────────────────────────
+#
+# syncproto.canonical_app_key is a best-effort join and says so in its own
+# docstring: no string rule resolves a package named after its vendor rather
+# than its product without a brand list. This is the fallback -- the user
+# types the same word for one app on both devices, and that word becomes the
+# canonical key instead of the automatic guess. See STATUS.md.
+
+def app_alias(config, local_app_id: int) -> str:
+    """The hand-typed sync name for one app, or "" if none is set."""
+    raw = config.get("app_aliases", {}) or {}
+    if not isinstance(raw, dict):
+        return ""
+    return str(raw.get(str(local_app_id), "") or "")
+
+
+def set_app_alias(config, local_app_id: int, alias: str) -> None:
+    """
+    Set (or, given blank text, clear) the sync name for one app.
+
+    Also drops any server id already cached for it. An alias is set because
+    the existing match is wrong or missing; leaving the stale id in place
+    would keep using it until the app happened to become "missing" again on
+    its own, which might be never.
+    """
+    raw = config.get("app_aliases", {}) or {}
+    aliases = dict(raw) if isinstance(raw, dict) else {}
+    key = str(local_app_id)
+    text = str(alias or "").strip()
+    if text:
+        aliases[key] = text
+    else:
+        aliases.pop(key, None)
+    config.set("app_aliases", aliases)
+
+    raw_ids = config.get("server_app_ids", {}) or {}
+    mapped = dict(raw_ids) if isinstance(raw_ids, dict) else {}
+    if mapped.pop(key, None) is not None:
+        config.set("server_app_ids", mapped)

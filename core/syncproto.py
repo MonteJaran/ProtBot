@@ -215,7 +215,7 @@ def build_upload(device_id: str, totals: dict, now=None) -> dict:
     }
 
 
-def build_app_sync(device_id: str, apps) -> dict:
+def build_app_sync(device_id: str, apps, aliases: dict | None = None) -> dict:
     """
     The app-list request that gets local database ids mapped to server ids.
 
@@ -223,17 +223,30 @@ def build_app_sync(device_id: str, apps) -> dict:
     goes on the wire rather than the display name, because the server's job is
     to put the same product from two devices in one row and it cannot do that
     if one device says "<Product>.exe" and the other says "com.<product>".
+
+    `aliases` is the hand-linking override this key's own docstring points to:
+    {local_id (as str): free text}, from a user who typed the same word on
+    both devices because canonical_app_key's automatic rule could not join
+    them (a package named after its vendor, say). The override text is put
+    through canonical_app_key too, not sent verbatim — so "Firefox" and
+    " firefox " still land on the same key, and there is no second
+    normalisation rule to keep in sync with the automatic one. Falls back to
+    the automatic key if the override is unusable (empty, or nothing but
+    punctuation), so a bad alias drops the override rather than the app.
     """
     if not device_id:
         return {}
 
+    aliases = aliases or {}
     entries = []
     for app in apps or ():
         try:
             local_id = int(app.get("id", 0))
         except (TypeError, ValueError):
             continue
-        key = canonical_app_key(app.get("name", "") or app.get("exe_name", ""))
+        override = aliases.get(str(local_id), "")
+        key = (canonical_app_key(override)
+               or canonical_app_key(app.get("name", "") or app.get("exe_name", "")))
         if local_id <= 0 or not key:
             continue
         entries.append([local_id, key, str(app.get("category", "") or "")])

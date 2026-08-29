@@ -218,6 +218,61 @@ class TestBuildUpload:
         assert payload == {}
 
 
+# ── Hand-linking apps across devices ────────────────────────────────────────
+#
+# canonical_app_key is a best-effort join and says so: no string rule
+# resolves a package named after its vendor without a brand list. The
+# fallback is the user typing the same word for one app on both devices.
+
+class TestHandLinkingApps:
+
+    def test_an_alias_overrides_the_automatic_key(self):
+        # "Firefox.exe" and "org.mozilla.firefox" do not join automatically
+        # (see TestCanonicalAppKey.test_the_join_is_best_effort_and_says_so).
+        # A shared alias makes them join anyway.
+        payload = syncproto.build_app_sync(
+            "dev123",
+            [{"id": 1, "name": "Firefox.exe", "category": "Browser"}],
+            aliases={"1": "browser-x"},
+        )
+        assert payload["a"] == [[1, "browserx", "Browser"]]
+
+    def test_the_alias_goes_through_the_same_normaliser_as_a_real_name(self):
+        # Not sent verbatim: two devices typing "Firefox" and " firefox "
+        # still have to land on one key, and there is no second rule to keep
+        # in sync with canonical_app_key if this were special-cased.
+        assert (syncproto.canonical_app_key("Firefox")
+                == syncproto.build_app_sync(
+                    "dev123", [{"id": 1, "name": "x"}], aliases={"1": "Firefox"},
+                )["a"][0][1])
+
+    def test_an_alias_for_a_different_app_does_not_leak_across(self):
+        payload = syncproto.build_app_sync(
+            "dev123",
+            [
+                {"id": 1, "name": "Discord.exe", "category": "Social"},
+                {"id": 2, "name": "Slack.exe", "category": "Social"},
+            ],
+            aliases={"1": "chatter-x"},
+        )
+        assert payload["a"] == [[1, "chatterx", "Social"], [2, "slack", "Social"]]
+
+    def test_an_unusable_alias_falls_back_to_the_automatic_key(self):
+        # Garbage in the alias field must drop the override, not the app.
+        payload = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Discord.exe", "category": "Social"}],
+            aliases={"1": "!!!"},
+        )
+        assert payload["a"] == [[1, "discord", "Social"]]
+
+    def test_no_aliases_behaves_exactly_as_before(self):
+        without = syncproto.build_app_sync("dev123", [{"id": 1, "name": "Discord.exe"}])
+        with_empty = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Discord.exe"}], aliases={},
+        )
+        assert without == with_empty
+
+
 # ── Hostile responses ─────────────────────────────────────────────────────
 
 class TestParsing:
@@ -483,6 +538,58 @@ class TestRegistration:
         transport = FakeTransport({syncclient.ENDPOINT_REGISTER: response})
         assert syncclient.register_device(config, "my-pc", transport=transport) == ""
         assert config.get("device_id") == ""
+
+
+class TestAppAliasHelpers:
+    """
+    core.syncclient.app_alias / set_app_alias: the storage half of hand-
+    linking apps across devices (STATUS.md). The dialog is
+    ui/files_page.py's "Sync Name" field; this is what it calls.
+    """
+
+    def test_setting_and_reading_an_alias(self, config):
+        syncclient.set_app_alias(config, 5, "shared-name")
+        assert syncclient.app_alias(config, 5) == "shared-name"
+
+    def test_blank_text_clears_the_alias(self, config):
+        syncclient.set_app_alias(config, 5, "shared-name")
+        syncclient.set_app_alias(config, 5, "   ")
+        assert syncclient.app_alias(config, 5) == ""
+
+    def test_reading_an_unset_alias_is_empty(self, config):
+        assert syncclient.app_alias(config, 999) == ""
+
+    def test_setting_an_alias_drops_the_cached_server_id(self, config):
+        # The point of the whole feature: a stale match must not survive a
+        # corrected alias, or the correction never takes effect.
+        config.set("server_app_ids", {"5": 42})
+        syncclient.set_app_alias(config, 5, "shared-name")
+        assert "5" not in config.get("server_app_ids")
+
+    def test_setting_an_alias_does_not_touch_other_apps_mappings(self, config):
+        config.set("server_app_ids", {"7": 99})
+        syncclient.set_app_alias(config, 5, "shared-name")
+        assert config.get("server_app_ids") == {"7": 99}
+
+
+class TestSyncClientSendsAliases:
+
+    def test_an_alias_is_sent_for_an_unmapped_app(self, db, config):
+        from core import consent
+
+        consent.record_consent(config, True)
+        config.set("device_id", "device-abc")
+        app_id = db.add_tracked_app("Firefox", "firefox.exe", "", "", "Browser")
+        syncclient.set_app_alias(config, app_id, "browser-x")
+
+        transport = FakeTransport({
+            syncclient.ENDPOINT_APPS: {"m": {}},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+
+        assert transport.payload_for(syncclient.ENDPOINT_APPS)["a"] == \
+            [[app_id, "browserx", "Browser"]]
 
 
 class TestNothingUndisclosedLeavesTheMachine:
@@ -784,6 +891,23 @@ class TestDeviceIdNeverTravelsInAUrl:
         assert "/group/{dev_id}" not in text
         assert '"/r"' not in text, \
             "the register endpoint must match syncclient.ENDPOINT_REGISTER"
+
+
+class TestTheHandLinkDialog:
+    """
+    ui/files_page.py's "Sync Name" field on the app-edit dialog. Read as
+    text, like the rest of this section -- Tk has no display in CI.
+    """
+
+    def test_the_edit_dialog_reads_and_writes_the_alias(self):
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        with open(os.path.join(REPO_ROOT, "ui", "files_page.py"), encoding="utf-8") as fh:
+            text = fh.read()
+        assert "from core.syncclient import app_alias, set_app_alias" in text
+        assert "set_app_alias(self.config, app_id, e_alias.get())" in text
 
 
 # ── The wire contract records the fix (AUDIT SF-09) ─────────────────────────
