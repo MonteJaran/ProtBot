@@ -41,7 +41,7 @@ class SyncClient(
 ) {
 
     private val prefs = context.applicationContext
-        .getSharedPreferences("protbot_sync", Context.MODE_PRIVATE)
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /** Group totals from the last successful /sync, keyed by server app id. */
     private var groupTotals: Map<Int, Long> = emptyMap()
@@ -66,6 +66,9 @@ class SyncClient(
     private var uploadedDate: String = ""
 
     val deviceId: String get() = prefs.getString(KEY_DEVICE_ID, "").orEmpty()
+
+    /** The bearer token this device authenticates with (AUDIT SF-09). */
+    val deviceToken: String get() = prefs.getString(KEY_DEVICE_TOKEN, "").orEmpty()
 
     val enabled: Boolean get() = deviceId.isNotEmpty()
 
@@ -173,6 +176,12 @@ class SyncClient(
      * The moment sync turns on, so it is an explicit call from the settings
      * screen rather than something that happens at startup. Nothing leaves the
      * phone before it.
+     *
+     * Also stores the bearer token the server returns alongside the id
+     * (AUDIT SF-09) -- every request after this one authenticates with it
+     * instead of the device id travelling alone. A server that has not
+     * deployed token issuance yet and omits "t" still registers the device;
+     * the token is simply empty until the server does.
      */
     suspend fun register(deviceName: String, email: String = ""): String {
         val payload = JSONObject().put("n", deviceName)
@@ -182,8 +191,27 @@ class SyncClient(
         val id = response.optString("id").orEmpty().trim()
         if (id.isEmpty()) return ""
 
-        prefs.edit().putString(KEY_DEVICE_ID, id).apply()
+        prefs.edit()
+            .putString(KEY_DEVICE_ID, id)
+            .putString(KEY_DEVICE_TOKEN, response.optString("t").orEmpty().trim())
+            .apply()
         return id
+    }
+
+    /**
+     * Join the device group a link key belongs to. True on success.
+     *
+     * The Kotlin half of core/linking.py's join_link. Unlike [register] and
+     * [syncOnce], this is meant to be called right after the user scans or
+     * types a code, so failure needs to reach the screen that can show it --
+     * hence a Boolean return rather than swallowing everything the way
+     * [syncOnce] does for its unattended background cycle.
+     */
+    suspend fun joinLink(key: String): Boolean {
+        if (!enabled) return false
+        val payload = JSONObject().put("d", deviceId).put("k", key)
+        val response = transport.post(ENDPOINT_LINK_JOIN, payload) ?: return false
+        return response.optInt("ok", 0) != 0
     }
 
     /**
@@ -191,11 +219,17 @@ class SyncClient(
      *
      * Clearing the device id alone would leave the app quiet but still holding
      * the identifier tying this phone to data on the server, and the stale
-     * app-id mapping would be wrong if the user registered again.
+     * app-id mapping would be wrong if the user registered again. The token
+     * goes with it -- it authenticates that same id and is worthless (and a
+     * leftover secret) without it.
      */
     @Synchronized
     fun unregister() {
-        prefs.edit().remove(KEY_DEVICE_ID).remove(KEY_APP_IDS).apply()
+        prefs.edit()
+            .remove(KEY_DEVICE_ID)
+            .remove(KEY_DEVICE_TOKEN)
+            .remove(KEY_APP_IDS)
+            .apply()
         groupTotals = emptyMap()
         groupFetchedAt = 0L
         groupDate = ""
@@ -312,8 +346,23 @@ class SyncClient(
         const val ENDPOINT_APPS = "/apps"
         const val ENDPOINT_UPLOAD = "/upload"
         const val ENDPOINT_SYNC = "/sync"
+        const val ENDPOINT_LINK_JOIN = "/link/join"
 
+        private const val PREFS_NAME = "protbot_sync"
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_DEVICE_TOKEN = "device_token"
         private const val KEY_APP_IDS = "server_app_ids"
+
+        /**
+         * The stored token, without needing a [SyncClient] (and so without
+         * needing the [Transport] that itself needs this token) -- for
+         * [SyncClientFactory], which builds the [HttpTransport] this class
+         * will use before this class exists to ask.
+         */
+        fun storedToken(context: Context): String =
+            context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_DEVICE_TOKEN, "")
+                .orEmpty()
     }
 }

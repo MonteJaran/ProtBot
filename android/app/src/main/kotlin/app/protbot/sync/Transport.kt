@@ -29,6 +29,11 @@ class HttpTransport(
     baseUrl: String,
     private val userAgent: String,
     private val timeoutMillis: Int = 10_000,
+    // The device's bearer token (AUDIT SF-09, desktop's core/syncclient.py
+    // Transport). Optional: a Transport built before registration, or
+    // against a server that has not deployed the check yet, still works,
+    // just unauthenticated.
+    private val token: String = "",
 ) : Transport {
 
     private val baseUrl = baseUrl.trimEnd('/')
@@ -54,6 +59,9 @@ class HttpTransport(
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("User-Agent", userAgent)
+                    if (token.isNotBlank()) {
+                        setRequestProperty("Authorization", "Bearer $token")
+                    }
                 }
 
                 connection.outputStream.use { it.write(payload.toString().toByteArray()) }

@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 755 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 755 Python tests green on 3.10 and 3.12, plus 130
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -23,7 +23,7 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 870 tests below are only as good as the last time someone ran them by hand. |
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 885 tests below are only as good as the last time someone ran them by hand. |
 | 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
 | 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
 | 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
@@ -48,24 +48,22 @@ Without the assetlinks file served from the domain, Android shows a chooser
 instead of opening ProtBot directly — it still works, it is one tap worse.
 Waits on #4 above.
 
-### 2. The in-app QR scanner
-`Linking.parsePayload` reads a scanned code and the manifest opens the app from
-one, so the stock-camera path is complete. What is missing is scanning from
-*inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
-machine with no Android SDK.
+### 2. Build the Android app for real
+The shared rules compile and pass 130 tests. `android/app/` — including the
+in-app QR scanner and the app picker, limit-edit and insights screens, all
+written since — has never been compiled, because this machine has no Android
+SDK. Until someone runs `gradle :app:assembleDebug`, the Android half is
+source code rather than software. See "Written but never executed" below for
+what specifically has not run and what to check first.
 
-### 3. Build the Android app for real
-The shared rules compile and pass 115 tests. `android/app/` has never been
-compiled, because this machine has no Android SDK. Until someone runs
-`gradle :app:assembleDebug`, the Android half is source code rather than
-software.
+### 3. A device-registration screen on Android
+Nothing on Android has ever called `SyncClient.register` — there is no
+Settings-equivalent screen to type a device name into. The QR scanner works
+around it by auto-registering with the phone's model name the first time
+someone scans a code, so linking a device does not depend on this existing.
+Registering deliberately, with a chosen name, still does.
 
-### 4. Write the Android screens
-The app picker (the `<queries>` block is declared, the UI is not), limit
-editing, and the insights screen. The blocking logic underneath them is done
-and tested.
-
-### 5. The remaining roadmap features
+### 4. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -90,7 +88,22 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
   policy they feed is tested thoroughly; the probes have never returned a real
   value.
 - **`create_shortcut.ps1`** — rewritten for PowerShell 5.1, never executed.
-- **`android/app/`** — written in full, never compiled. No Android SDK here.
+- **`android/app/`** — written in full, never compiled. No Android SDK here;
+  `settings.gradle.kts` excludes the module entirely unless one is present,
+  so `gradle :core:test` (which does run, in CI and here) never touches it.
+  Newest and least tested: the in-app QR scanner (`ui/ScanScreen.kt`, two new
+  dependencies — CameraX and ML Kit's on-device barcode reader — neither of
+  which has resolved a Gradle dependency graph, let alone run) and three
+  Compose screens (`ui/AppPickerScreen.kt`, `ui/LimitEditScreen.kt`,
+  `ui/InsightsScreen.kt`). The arithmetic each screen needs is in `:core`
+  (`Insights.kt`) and is tested — a real overflow bug in it was caught and
+  fixed by that test suite before this note was written, which is exactly
+  the case for keeping logic there instead of in `:app`. The screens
+  themselves, the camera binding, and the permission flow are not — check
+  those first on a real device. `sync/SyncClient.kt` and `sync/Transport.kt`
+  also gained the Android side of the desktop's sync-auth fix (AUDIT SF-09:
+  a bearer token, and a new `joinLink` for the scanner to call) — same file,
+  same caveat.
 
 `BUILD.md` walks the first real build.
 
@@ -120,7 +133,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **An Android app** | A second application sharing the desktop's rules — focus hours, limit semantics, usage accounting, the protected list, the block decision. `android/core/` compiles and passes 115 tests. |
+| **An Android app** | A second application sharing the desktop's rules — focus hours, limit semantics, usage accounting, the protected list, the block decision, and now Insights' today/this-week aggregation. `android/core/` compiles and passes 130 tests. |
 | **Cross-device sync** | A two-hour limit means two hours across both devices, not two hours each. Uploads are cumulative so a retry cannot double-count; the day is the client's day; merging subtracts this device's own stale contribution rather than taking the larger number. |
 | **QR device linking** | The PC shows a code, the phone scans it. The key travels in the URL fragment, which never reaches a web server. An https App Link, not a custom scheme, so the stock camera can open it. The characters stay on screen beside the code as a fallback. |
 | **A QR encoder** | `core/qrcode.py`, standard library only — byte mode, versions 1–10, all four error levels. Verified by reading generated symbols back with a real decoder, which caught two bugs that produced pixel-perfect unreadable codes. |
@@ -146,7 +159,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **870 tests** | 755 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
+| **885 tests** | 755 Python across 3.10 and 3.12, 130 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
 | **A software bill of materials, for the EU Cyber Resilience Act** | CI generates a CycloneDX 1.6 SBOM from `requirements.lock` with `cyclonedx-py`, validates it against the schema, and publishes it as a build artifact on every push. Regulation (EU) 2024/2847 requires one for products with digital elements sold in the EU; vulnerability-reporting obligations begin 11 September 2026, full application 11 December 2027. |
@@ -180,6 +193,11 @@ Recorded so nobody rediscovers them as bugs.
 - **A link code is a secret with a short life.** Whoever scans it joins the
   device group and can read its totals. Five minutes, single use, and the
   dialog says so.
+- **Scanning a code on Android registers the device with its model name,
+  not a chosen one.** There is no registration screen yet (#3 above) to ask
+  for a better name first, and a device the user can identify in a list
+  later is a smaller loss than blocking linking on a screen that does not
+  exist.
 - **The Android app has never been compiled.** The shared rules have.
 - **The changelog has no released version.** Nothing has shipped. A test fails
   if that claim stops being true without a version being added.

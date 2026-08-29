@@ -35,9 +35,11 @@ any of it. The first entry under a real version number will be written when
   same test cases. Off until a device is registered. The server it talks to
   does not exist yet.
 - **An Android app** (`android/`). A second application sharing the desktop's
-  rules — focus hours, limit semantics, usage accounting, the protected list.
-  The shared module compiles and passes its tests; the Android layer has never
-  been built, because it needs an SDK.
+  rules — focus hours, limit semantics, usage accounting, the protected list,
+  and now Insights' today/this-week aggregation. The shared module compiles
+  and passes its tests; the Android layer — including an in-app QR scanner
+  (CameraX + ML Kit) and the app picker, limit-edit and insights screens
+  added since — has never been built, because it needs an SDK.
 - **Scheduled focus hours.** A recurring window that tightens existing limits,
   including windows that cross midnight.
 - **Data retention.** History older than the configured window is dropped on
@@ -135,4 +137,7 @@ any of it. The first entry under a real version number will be written when
   `ui/processes_page.py` each carried their own unauthenticated request code
   — a leftover from before `core/syncclient.py` existed — instead of using
   it. Both now do. The server-side check waits on the server existing at all;
-  the client sends the header regardless.
+  the client sends the header regardless. The Android client
+  (`sync/SyncClient.kt`, `sync/Transport.kt`) gained the same token and a new
+  `joinLink`, for parity — unverified along with the rest of `:app`; see
+  STATUS.md.

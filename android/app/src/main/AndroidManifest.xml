@@ -32,6 +32,18 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
+      The in-app QR scanner (ui/ScanScreen.kt). Runtime-requested, and only
+      asked for when the user opens that screen -- linking a device is
+      optional, like sync itself, so nothing asks for this at startup.
+      required="false" on the feature: a camera-less device (some tablets)
+      can still install and use ProtBot, it just cannot scan a code -- the
+      QR the desktop shows still works from the stock camera app either way,
+      via the https App Link below.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!--
       Android 11+ hides the installed app list unless you declare what you
       need. QUERY_ALL_PACKAGES is a sensitive permission Google reviews
       closely; a <queries> block is the narrower, defensible option and is

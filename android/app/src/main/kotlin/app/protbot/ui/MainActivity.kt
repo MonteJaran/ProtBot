@@ -25,12 +25,55 @@ class MainActivity : ComponentActivity() {
         // are enqueueUniquePeriodicWork with KEEP, so this is a no-op after
         // the first launch.
         SyncWorker.schedule(this)
-        setContent { MaterialTheme { HomeScreen() } }
+        setContent { MaterialTheme { AppRoot() } }
+    }
+}
+
+/**
+ * Which screen is showing.
+ *
+ * Held here rather than through a navigation library: five screens, and
+ * nothing but Home has a deep link into it (the QR-code App Link opens
+ * MainActivity itself, always at Home -- see AndroidManifest.xml), so a
+ * `when` over a sealed class covers it. One fewer new dependency in code
+ * with no display to check the result on.
+ */
+private sealed class Screen {
+    data object Home : Screen()
+    data object AppPicker : Screen()
+    data class LimitEdit(val packageName: String, val label: String) : Screen()
+    data object Insights : Screen()
+    data object Scan : Screen()
+}
+
+@Composable
+private fun AppRoot() {
+    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
+
+    when (val current = screen) {
+        is Screen.Home -> HomeScreen(
+            onManageApps = { screen = Screen.AppPicker },
+            onInsights = { screen = Screen.Insights },
+            onScan = { screen = Screen.Scan },
+        )
+        is Screen.AppPicker -> AppPickerScreen(
+            onBack = { screen = Screen.Home },
+            onEditLimit = { pkg, label -> screen = Screen.LimitEdit(pkg, label) },
+        )
+        is Screen.LimitEdit -> LimitEditScreen(
+            packageName = current.packageName,
+            label = current.label,
+            // Back to the picker, not Home: the user came from there and
+            // most likely wants to add or edit another app next.
+            onDone = { screen = Screen.AppPicker },
+        )
+        is Screen.Insights -> InsightsScreen(onBack = { screen = Screen.Home })
+        is Screen.Scan -> ScanScreen(onDone = { screen = Screen.Home })
     }
 }
 
 @Composable
-private fun HomeScreen() {
+private fun HomeScreen(onManageApps: () -> Unit, onInsights: () -> Unit, onScan: () -> Unit) {
     val context = LocalContext.current
 
     // Re-read on every composition: the user grants these in Settings and
@@ -79,7 +122,20 @@ private fun HomeScreen() {
                 "Tracking is on. Add apps and set daily limits below.",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = onManageApps) { Text("Manage tracked apps") }
+                OutlinedButton(onClick = onInsights) { Text("Insights") }
+            }
         }
+
+        HorizontalDivider()
+        Text("Cross-device sync", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Scan the code shown on your PC's Devices tab to link this phone " +
+                "and share a limit across both.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        OutlinedButton(onClick = onScan) { Text("Scan a link code") }
     }
 }
 

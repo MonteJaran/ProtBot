@@ -3,11 +3,13 @@ package app.protbot.data
 import android.content.Context
 import app.protbot.core.BlockPolicy
 import app.protbot.core.FocusHours
+import app.protbot.core.Insights
 import app.protbot.core.Sync
 import app.protbot.usage.UsageCollector
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Ties the collector, storage and the block policy together.
@@ -41,6 +43,53 @@ class UsageRepository private constructor(context: Context) {
 
     /** The tracked apps, read once rather than observed. */
     suspend fun trackedAppsOnce(): List<TrackedApp> = dao.allApps()
+
+    /** The tracked apps, observed -- what the App Picker and Insights
+     *  screens show, so adding or removing one updates them live. */
+    fun trackedAppsFlow(): Flow<List<TrackedApp>> = dao.trackedApps()
+
+    /**
+     * Start (or update) tracking one app.
+     *
+     * Upsert, not insert: called from both the App Picker (a fresh app,
+     * limit 0 = unlimited) and the limit-edit screen (an existing one,
+     * whatever limit was already set). [TrackedApp.packageName] is the
+     * primary key, so this is never a duplicate row.
+     */
+    suspend fun setApp(
+        packageName: String,
+        label: String,
+        dailyLimitMinutes: Int = 0,
+        enabled: Boolean = true,
+    ) {
+        dao.upsertApp(TrackedApp(packageName, label, dailyLimitMinutes, enabled))
+    }
+
+    suspend fun removeApp(packageName: String) = dao.removeApp(packageName)
+
+    /**
+     * The Insights screen's rows: every tracked app, today's and this
+     * week's usage, and how far into today's limit each one is.
+     *
+     * One query for every app's usage across the window (`dao.usageSince`)
+     * rather than one per app -- a user with fifty tracked apps should not
+     * mean fifty queries to open one screen. The actual arithmetic is
+     * app.protbot.core.Insights.summarize, which is what has tests; this is
+     * just the Room shape it needs.
+     */
+    suspend fun insightsSummary(
+        days: Int = 7,
+        today: LocalDate = LocalDate.now(),
+    ): List<Insights.AppSummary> {
+        val apps = dao.allApps().map {
+            Insights.AppInfo(it.packageName, it.label, it.dailyLimitMinutes)
+        }
+        val weekDates = Insights.trailingDates(today, days)
+        val usageByDate: Map<String, Map<String, Long>> = dao.usageSince(weekDates.first())
+            .groupBy { it.date }
+            .mapValues { (_, rows) -> rows.associate { it.packageName to it.seconds } }
+        return Insights.summarize(apps, usageByDate, today.toString(), weekDates)
+    }
 
     /**
      * The policy the blocker should enforce right now.
