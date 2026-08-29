@@ -62,6 +62,11 @@ ENDPOINT_UPLOAD = "/upload"
 ENDPOINT_SYNC = "/sync"
 
 
+def _auth_header(token: str) -> dict:
+    token = str(token or "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 class Transport:
     """
     One HTTP POST, returning parsed JSON or None.
@@ -71,9 +76,15 @@ class Transport:
     wrong types — without a network or a server.
     """
 
-    def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT) -> None:
+    def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT,
+                token: str = "") -> None:
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout
+        # The device's bearer token (AUDIT SF-09) -- see RegisterResp.t in
+        # server/models.py. Optional: a Transport built before registration,
+        # or against a server that has not deployed the check yet, still
+        # works, just unauthenticated.
+        self.token = str(token or "").strip()
 
     def post(self, path: str, payload: dict):
         if not self.base_url:
@@ -97,6 +108,7 @@ class Transport:
             headers={
                 "Content-Type": "application/json",
                 "User-Agent": f"ProtBot/{__version__}",
+                **_auth_header(self.token),
             },
             method="POST",
         )
@@ -118,6 +130,47 @@ class Transport:
             return None
 
 
+def build_transport(config, timeout: int = REQUEST_TIMEOUT) -> "Transport":
+    """The one place that turns config into a Transport, token included."""
+    return Transport(config.get("server_url", ""), timeout=timeout,
+                     token=config.get("device_token", ""))
+
+
+def authed_request(config, method: str, path: str, body: dict | None = None,
+                   timeout: int = REQUEST_TIMEOUT):
+    """
+    A synchronous, authenticated request that raises on failure.
+
+    For foreground UI code (Devices tab: register, generate a link code, join
+    one, list the group) that needs to show the user *why* a request failed —
+    the opposite contract from Transport.post, which swallows everything
+    because it runs on the background sync thread and must never raise into
+    the monitor's poll loop. Both enforce https and attach the device's
+    token; this is not routed through Transport because the two error
+    contracts do not mix.
+
+    Never puts anything identifying in the URL (AUDIT SF-09) -- path is a
+    fixed string, and the caller passes ids like device_id in `body`.
+    """
+    base = str(config.get("server_url", "") or "").rstrip("/")
+    if not base:
+        raise ValueError("Server URL not configured — go to Settings.")
+    if not base.lower().startswith("https://"):
+        raise ValueError("Sync server URL must be https.")
+
+    url = base + "/" + path.lstrip("/")
+    data = json.dumps(body).encode("utf-8") if body else None
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": f"ProtBot/{__version__}",
+        **_auth_header(config.get("device_token", "")),
+    }
+
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.status, json.loads(response.read().decode("utf-8"))
+
+
 class SyncClient:
     """
     Keeps this device's totals and the group's totals in step.
@@ -129,7 +182,7 @@ class SyncClient:
     def __init__(self, db, config, transport=None) -> None:
         self.db = db
         self.config = config
-        self._transport = transport or Transport(config.get("server_url", ""))
+        self._transport = transport or build_transport(config)
 
         self._lock = threading.RLock()
         self._thread = None
@@ -398,8 +451,15 @@ def register_device(config, device_name: str = "", email: str = "",
     made from the Devices tab rather than something that happens on startup.
     The email is optional and is the user's to type or leave blank; the server
     discards it after the response (server/models.py).
+
+    Also stores the bearer token the server issues alongside the id (AUDIT
+    SF-09) — every request after this one authenticates with it instead of
+    the device id travelling alone. A server that has not deployed token
+    issuance yet and omits `t` still registers the device; the token is
+    simply empty until the server does, at which point every client already
+    sends whatever it has.
     """
-    transport = transport or Transport(config.get("server_url", ""))
+    transport = transport or build_transport(config)
     payload = {"n": str(device_name or "")}
     if email:
         payload["e"] = str(email)
@@ -415,6 +475,7 @@ def register_device(config, device_name: str = "", email: str = "",
         return ""
 
     config.set("device_id", device_id)
+    config.set("device_token", str(response.get("t", "") or "").strip())
     log.info("Device registered for sync.")
     return device_id
 
@@ -425,9 +486,12 @@ def unregister_device(config) -> None:
 
     Clearing the device id alone would leave the app quiet but still holding
     the identifier that ties this machine to data on the server, and the stale
-    app-id mapping would be wrong the moment the user registered again.
+    app-id mapping would be wrong the moment the user registered again. The
+    token goes with it — it authenticates that same id and is worthless
+    (and a leftover secret) without it.
     """
     config.set("device_id", "")
+    config.set("device_token", "")
     config.set("server_app_ids", {})
     config.set("linked_devices", [])
     log.info("Device unregistered; sync is off.")

@@ -240,7 +240,7 @@ def request_link(config, transport=None) -> LinkSession:
             "Register this device for sync before linking another one."
         )
 
-    transport = transport or syncclient.Transport(config.get("server_url", ""))
+    transport = transport or syncclient.build_transport(config)
     response = transport.post("/link/new", {"d": device_id})
     if not isinstance(response, dict):
         raise LinkError("Could not reach the sync server. Check your connection.")
@@ -270,7 +270,7 @@ def join_link(config, key: str, transport=None) -> str:
             "Register this device for sync before joining another device."
         )
 
-    transport = transport or syncclient.Transport(config.get("server_url", ""))
+    transport = transport or syncclient.build_transport(config)
     response = transport.post("/link/join", {"d": device_id, "k": key})
     if not isinstance(response, dict):
         raise LinkError("Could not reach the sync server. Check your connection.")

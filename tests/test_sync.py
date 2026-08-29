@@ -17,7 +17,9 @@ agree: the key is the only thing joining "Discord.exe" on the PC to
 gets two half-counted apps and no error anywhere.
 """
 
+import json
 import time
+import urllib.request
 from datetime import datetime
 
 import pytest
@@ -318,9 +320,11 @@ class TestSyncIsOffUntilTheUserTurnsItOn:
         assert transport.requests == []
 
     def test_unregistering_forgets_the_mapping_too(self, config, synced):
+        config.set("device_token", "tok-abc")
         syncclient.unregister_device(config)
         assert config.get("device_id") == ""
         assert config.get("server_app_ids") == {}
+        assert config.get("device_token") == ""
 
 
 class TestOneSyncCycle:
@@ -619,3 +623,201 @@ class TestTheLimitCheckCountsBothDevices:
 
         both = self._monitor(db, config, remote_sec=25 * 60)
         assert both._usage_today_sec(synced) >= 3600
+
+
+# ── Authentication (AUDIT SF-09) ────────────────────────────────────────────
+#
+# A device id alone is not a credential: it travels in request bodies (and,
+# before this fix, in one URL path) and lands in server, proxy and log lines.
+# Every request after registration must carry the bearer token the server
+# issues alongside the id.
+
+class _FakeHTTPResponse:
+    """Stands in for the object urlopen()'s context manager yields."""
+
+    def __init__(self, status=200, body=b'{"ok": 1}'):
+        self.status = status
+        self._body = body
+
+    def read(self, *_args, **_kwargs):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc_info):
+        return False
+
+
+class TestAuthentication:
+
+    def test_transport_sends_the_token_as_a_bearer_header(self, monkeypatch):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return _FakeHTTPResponse()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+        result = syncclient.Transport("https://example.com", token="secret-token") \
+            .post("/upload", {"d": "x"})
+
+        assert result == {"ok": 1}
+        assert captured["request"].get_header("Authorization") == "Bearer secret-token"
+
+    def test_transport_sends_no_authorization_header_without_a_token(self, monkeypatch):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return _FakeHTTPResponse()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+        # Backward compatible: a device that has never registered, or a
+        # server that has not deployed token issuance yet, still works.
+        syncclient.Transport("https://example.com").post("/upload", {"d": "x"})
+        assert captured["request"].get_header("Authorization") is None
+
+    def test_build_transport_reads_the_server_url_and_token_from_config(self, config):
+        config.set("server_url", "https://sync.protbot.app")
+        config.set("device_token", "tok-123")
+
+        transport = syncclient.build_transport(config)
+
+        assert transport.base_url == "https://sync.protbot.app"
+        assert transport.token == "tok-123"
+
+    def test_registering_stores_the_token_the_server_gave(self, config):
+        transport = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "t": "tok-abc"},
+        })
+        syncclient.register_device(config, "my-pc", transport=transport)
+        assert config.get("device_token") == "tok-abc"
+
+    def test_a_server_with_no_token_issuance_yet_still_registers(self, config):
+        # Today's real behaviour: there is no server, so no response ever
+        # carries "t". Registration must not fail because of that.
+        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        assert syncclient.register_device(config, "my-pc", transport=transport) == "abc123"
+        assert config.get("device_token") == ""
+
+    def test_sync_client_uses_the_stored_token_by_default(self, db, config, synced):
+        config.set("device_token", "tok-xyz")
+        client = SyncClient(db, config)
+        assert client._transport.token == "tok-xyz"
+
+    def test_authed_request_attaches_the_token(self, monkeypatch, config):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return _FakeHTTPResponse(body=b'{"devices": []}')
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+        config.set("server_url", "https://sync.protbot.app")
+        config.set("device_token", "tok-xyz")
+        status, data = syncclient.authed_request(config, "POST", "/group", {"d": "dev-1"})
+
+        assert status == 200
+        assert data == {"devices": []}
+        assert captured["request"].get_header("Authorization") == "Bearer tok-xyz"
+        # The device id travelled in the body, never string-interpolated
+        # into the URL -- the point of this whole finding.
+        assert "dev-1" not in captured["request"].full_url
+
+    def test_authed_request_sends_the_body_as_json(self, monkeypatch, config):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return _FakeHTTPResponse(body=b"{}")
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        config.set("server_url", "https://sync.protbot.app")
+
+        syncclient.authed_request(config, "POST", "/group", {"d": "dev-1"})
+        assert json.loads(captured["request"].data) == {"d": "dev-1"}
+
+    def test_authed_request_refuses_plain_http(self, config):
+        config.set("server_url", "http://example.com")
+        with pytest.raises(ValueError):
+            syncclient.authed_request(config, "POST", "/group", {"d": "dev-1"})
+
+    def test_authed_request_requires_a_server_url(self, config):
+        config.set("server_url", "")
+        with pytest.raises(ValueError):
+            syncclient.authed_request(config, "GET", "/group")
+
+
+# ── The device id must never travel in a URL (AUDIT SF-09) ─────────────────
+#
+# The audit's literal citations: `ui/processes_page.py` and
+# `ui/devices_page.py` each hand-rolled their own request instead of going
+# through Transport/authed_request, and one of them string-interpolated the
+# device id straight into the URL path. Read as text, like the rest of this
+# suite's checks on the UI modules it cannot import (no display in CI).
+
+class TestDeviceIdNeverTravelsInAUrl:
+
+    @staticmethod
+    def _ui_source(name: str) -> str:
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        with open(os.path.join(REPO_ROOT, "ui", name), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_processes_page_has_no_hand_rolled_request(self):
+        text = self._ui_source("processes_page.py")
+        assert "urllib.request" not in text
+        assert "/sync/{device_id}" not in text
+        assert "from core import syncclient" in text
+
+    def test_devices_page_api_helper_delegates_to_syncclient(self):
+        text = self._ui_source("devices_page.py")
+        assert "urlopen" not in text
+        assert "syncclient.authed_request" in text
+        assert "/group/{dev_id}" not in text
+        assert '"/r"' not in text, \
+            "the register endpoint must match syncclient.ENDPOINT_REGISTER"
+
+
+# ── The wire contract records the fix (AUDIT SF-09) ─────────────────────────
+#
+# server/models.py is the spec a real server is built against (#8/#9 in
+# STATUS.md); it cannot be imported here without pydantic, which is a known,
+# accepted gap (AUDIT ST-05) -- read as text like the rest of this section.
+
+class TestTheWireContractRequiresTheToken:
+
+    @staticmethod
+    def _models_source() -> str:
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        with open(os.path.join(REPO_ROOT, "server", "models.py"), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_register_resp_carries_a_token(self):
+        import re
+
+        match = re.search(r"class RegisterResp\(BaseModel\):(.*?)\n\n",
+                          self._models_source(), re.DOTALL)
+        assert match, "RegisterResp not found in server/models.py"
+        assert re.search(r"^\s*t:\s*str", match.group(1), re.MULTILINE), (
+            "RegisterResp must carry the bearer token every later request "
+            "authenticates with"
+        )
+
+    def test_the_group_endpoint_is_specified(self):
+        # ui/devices_page.py's "list linked devices" call had no model at
+        # all before this fix -- undocumented and, worse, a GET with the
+        # device id in the URL.
+        text = self._models_source()
+        assert "class GroupReq" in text
+        assert "class GroupResp" in text

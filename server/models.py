@@ -30,6 +30,17 @@ building one.
      have to land in one row. The server matches on that key within a device
      group and assigns one server id.
 
+  4. **Every request after registration must carry the token, not just the
+     device id.** `RegisterResp.t` is a secret issued once, at registration
+     (AUDIT SF-09 — a device id alone is not a credential; it travels in
+     request bodies and lands in logs). The server must require it as an
+     `Authorization: Bearer <t>` header on `/apps`, `/upload`, `/sync`,
+     `/link/new`, `/link/join` and `/group`, and reject a request whose token
+     does not match the device id it claims — otherwise anyone holding or
+     guessing a device id can read or corrupt that device's data. The clients
+     (core/syncclient.py's `Transport`/`authed_request`) already send it when
+     they have one; there is nothing server-side to check it against yet.
+
 `SyncResp.apps` returns the group total per app, including the requesting
 device's own last upload. Clients subtract their own contribution before
 merging; see syncproto.merge_app_total for why that is not the same as taking
@@ -46,7 +57,24 @@ class RegisterReq(BaseModel):
     n: str | None = None   # device label, shown only in the user's device list
 
 class RegisterResp(BaseModel):
-    id: str                   # 24-char device_id
+    id: str                    # 24-char device_id
+    t: str                     # secret bearer token for this device (AUDIT SF-09)
+
+
+# ── Group membership (linked-devices list) ─────────────────────────────────────
+
+class GroupReq(BaseModel):
+    d: str                    # device_id
+
+class GroupDevice(BaseModel):
+    id: str
+    name: str | None = None
+    platform: str | None = None
+    seen: int | None = None   # unix timestamp, last successful sync
+    isOwn: bool = False
+
+class GroupResp(BaseModel):
+    devices: list[GroupDevice]
 
 
 # ── App list sync (sent once, or when tracked apps change) ────────────────────

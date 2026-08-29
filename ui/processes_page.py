@@ -293,8 +293,8 @@ class ProcessesPage(ttk.Frame):
     def _do_sync(self) -> None:
         """Fetch synced usage from all linked devices in background thread."""
         import threading
-        import urllib.request
-        import json as _json
+
+        from core import syncclient
 
         device_id = self.config.get("device_id", "")
         server_url = self.config.get("server_url", "")
@@ -303,14 +303,16 @@ class ProcessesPage(ttk.Frame):
 
         def _fetch():
             try:
-                url = f"{server_url}/sync/{device_id}"
-                req = urllib.request.Request(url, method="GET")
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = _json.loads(resp.read().decode())
-                    self._synced_usage = data.get("apps", {})
-                    self._app_details  = data.get("appDetails", [])
-                    self._linked_device_count = data.get("devices", 1)
-                    self.after(0, self.refresh)
+                # POST with the device id in the body, not the URL (AUDIT
+                # SF-09), through the same https-enforcing, token-attaching
+                # request core/linking.py and the Devices tab use -- not a
+                # second hand-rolled client.
+                _, data = syncclient.authed_request(
+                    self.config, "POST", syncclient.ENDPOINT_SYNC, {"d": device_id})
+                self._synced_usage = data.get("apps", {})
+                self._app_details  = data.get("appDetails", [])
+                self._linked_device_count = data.get("devices", 1)
+                self.after(0, self.refresh)
             except Exception as e:
                 # Sync is best-effort, but a persistent failure needs to be
                 # findable rather than swallowed.

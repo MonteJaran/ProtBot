@@ -110,3 +110,15 @@ any of it. The first entry under a real version number will be written when
   with a test that fails the build if one returns.
 - **The plan comparison advertised features that did not exist.** Removed, with
   a test that fails if an unimplemented feature is listed as included.
+
+### Security
+
+- **The sync API had no authentication (AUDIT SF-09).** A device ID alone was
+  the credential, and one code path put it straight in a URL, where it lands
+  in server, proxy and log lines. Registration now also returns a bearer
+  token that every later request sends as `Authorization: Bearer`. Fixing
+  this surfaced two more copies of the same problem: `ui/devices_page.py` and
+  `ui/processes_page.py` each carried their own unauthenticated request code
+  — a leftover from before `core/syncclient.py` existed — instead of using
+  it. Both now do. The server-side check waits on the server existing at all;
+  the client sends the header regardless.

@@ -8,21 +8,15 @@ Sections
 3. Your Plan     — freemium vs premium feature comparison + upgrade CTA
 """
 
-import json
 import threading
 import tkinter as tk
 import webbrowser
 from tkinter import messagebox, ttk
 
-from core import licensing
+from core import licensing, syncclient
 from core.logging_setup import get_logger
 
 log = get_logger("devices")
-
-try:
-    from urllib.request import urlopen, Request
-except ImportError:
-    urlopen = None
 
 # ── Colour palette (matches app.py) ──────────────────────────────────────────
 BG      = '#1a1a2e'
@@ -81,20 +75,15 @@ _PLANNED_FEATURES = [
 
 def _api(config, method: str, path: str, body: dict = None):
     """
-    Minimal synchronous API call to the Firebase Cloud Functions endpoint.
-    Returns (status_code, response_dict) or raises URLError / HTTPError.
+    Synchronous API call to the sync server. Returns (status_code,
+    response_dict) or raises.
+
+    A thin wrapper, not a second implementation: core.syncclient.authed_request
+    is what actually builds the request, enforces https, and attaches the
+    device's bearer token (AUDIT SF-09) -- kept here only so the many call
+    sites below don't change.
     """
-    base = (config.get("server_url") or "").rstrip("/")
-    if not base:
-        raise ValueError("Server URL not configured — go to Settings.")
-
-    url  = f"{base}/{path.lstrip('/')}"
-    data = json.dumps(body).encode() if body else None
-    headers = {"Content-Type": "application/json"}
-
-    req  = Request(url, data=data, headers=headers, method=method)
-    with urlopen(req, timeout=10) as resp:
-        return resp.status, json.loads(resp.read().decode())
+    return syncclient.authed_request(config, method, path, body)
 
 
 class DevicesPage(ttk.Frame):
@@ -460,14 +449,17 @@ class DevicesPage(ttk.Frame):
             try:
                 import socket
                 hostname = socket.gethostname() or "Windows PC"
-                body = {"n": hostname, "p": "Windows"}
+                body = {"n": hostname}
                 if email:
                     body["e"] = email
-                _, resp = _api(self.config, "POST", "/r", body)
+                _, resp = _api(self.config, "POST", syncclient.ENDPOINT_REGISTER, body)
                 dev_id = resp.get("id", "")
                 if not dev_id:
                     raise ValueError("No ID returned from server.")
                 self.config.set("device_id", dev_id)
+                # The bearer token every request after this one authenticates
+                # with (AUDIT SF-09) -- see RegisterResp.t in server/models.py.
+                self.config.set("device_token", str(resp.get("t", "") or "").strip())
                 self.after(0, lambda: self._reg_done(dev_id))
             except Exception as exc:
                 # Bind the value into the lambda: `exc` is deleted when the
@@ -716,7 +708,9 @@ class DevicesPage(ttk.Frame):
 
         def _fetch():
             try:
-                _, data = _api(self.config, "GET", f"/group/{dev_id}")
+                # POST with the device id in the body, not the URL (AUDIT
+                # SF-09) -- see GroupReq/GroupResp in server/models.py.
+                _, data = _api(self.config, "POST", "/group", {"d": dev_id})
                 others = [
                     {
                         "id":        d["id"],
