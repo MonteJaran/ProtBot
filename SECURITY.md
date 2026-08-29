@@ -52,10 +52,15 @@ fine — you will just get this section back.
   attacker who already has the account gains nothing real, because the key
   would have to live in the same place. `PRIVACY.md` states this plainly
   rather than implying protection that is not there.
-- **The device id is the sync credential and travels in a URL path**, where it
-  lands in server and proxy logs. This one is a genuine weakness, tracked as
-  AUDIT SF-09 and item 1 of the coding list in `STATUS.md`. It is named here
-  because you would find it anyway.
+- **The sync server does not exist yet, so its side of the authentication
+  check cannot either.** AUDIT SF-09 (the device id travelling as its own
+  credential, unauthenticated, and once in a URL path) is closed on the
+  client: every request now sends a bearer token issued at registration
+  (`RegisterResp.t`, `core/syncclient.py`), and nothing puts a device id in a
+  URL. There is no server deployed to require that token yet — see item 8 of
+  the blocked list in `STATUS.md` — so until one exists, an unauthenticated
+  request would currently succeed regardless. Named here so nobody reports it
+  as still-open client work.
 
 ## Supported versions
 
@@ -72,3 +77,7 @@ about the future rather than a policy with any history behind it yet.
 - Dependencies are pinned by exact version and SHA-256 hash in
   `requirements.lock`. Release builds install with `--require-hashes`.
 - Dependabot opens pull requests for dependency and GitHub Action updates.
+- CI generates a CycloneDX software bill of materials from
+  `requirements.lock` on every push and publishes it as a build artifact —
+  Regulation (EU) 2024/2847 (the Cyber Resilience Act) requires one for
+  products with digital elements sold in the EU.

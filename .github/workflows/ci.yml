@@ -135,6 +135,38 @@ jobs:
         # what stops that going unnoticed.
         run: pip-audit --requirement requirements.lock --strict --progress-spinner off
 
+  sbom:
+    name: Software bill of materials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cyclonedx-py
+        run: python -m pip install --upgrade pip cyclonedx-bom
+
+      - name: Generate the SBOM
+        # Regulation (EU) 2024/2847 (the Cyber Resilience Act) requires one for
+        # products with digital elements sold in the EU. requirements.lock is
+        # what a release actually installs, so it is what the SBOM describes —
+        # the same reasoning as the audit job above. --validate makes
+        # cyclonedx-py check the document against the CycloneDX 1.6 schema
+        # itself; a malformed BOM fails this step rather than shipping.
+        run: |
+          python -m cyclonedx_py requirements requirements.lock \
+            --pyproject pyproject.toml \
+            --of JSON --sv 1.6 --validate \
+            -o protbot.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: protbot.cdx.json
+          retention-days: 90
+
   android-core:
     name: Android shared rules
     runs-on: ubuntu-latest

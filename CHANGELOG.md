@@ -66,6 +66,10 @@ any of it. The first entry under a real version number will be written when
   Windows, with lint, a byte-compile pass over the Tk modules, a packaging
   config check, `pip-audit` against the pinned lockfile, and the Android rule
   tests.
+- **A software bill of materials.** CI generates a CycloneDX SBOM from
+  `requirements.lock` and publishes it as a build artifact on every push —
+  Regulation (EU) 2024/2847 requires one for products with digital elements
+  sold in the EU.
 
 ### Changed
 

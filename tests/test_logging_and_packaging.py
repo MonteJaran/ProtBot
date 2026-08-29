@@ -213,6 +213,22 @@ def test_build_script_installs_protbot_before_freezing():
     assert "pip install -e ." in text
 
 
+# ── A software bill of materials, for the EU Cyber Resilience Act ─────────────
+
+def test_ci_generates_and_publishes_an_sbom():
+    """
+    Regulation (EU) 2024/2847 applies to products with digital elements sold
+    in the EU. cyclonedx-py cannot run here (no network in this test's
+    environment is guaranteed), so this only pins the CI wiring in place —
+    generated from requirements.lock, the same file the audit job checks, so
+    the two can never describe different dependency sets.
+    """
+    text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "cyclonedx" in text.lower()
+    assert "requirements.lock" in text
+    assert "upload-artifact" in text
+
+
 # ── Dependency hygiene (BL-05, ST-07) ─────────────────────────────────────────
 
 def test_pystray_is_gone():

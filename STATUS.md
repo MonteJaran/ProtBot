@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 718 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 719 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -23,7 +23,7 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 833 tests below are only as good as the last time someone ran them by hand. |
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 834 tests below are only as good as the last time someone ran them by hand. |
 | 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
 | 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
 | 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
@@ -59,33 +59,25 @@ DPI awareness and font sizes are done. Still missing: keyboard navigation,
 screen-reader labelling, a high-contrast mode. The EU Accessibility Act has
 applied to consumer software since June 2025.
 
-### 4. Generate an SBOM, for the EU Cyber Resilience Act
-Regulation (EU) 2024/2847 applies to products with digital elements sold in the
-EU. Vulnerability-reporting obligations begin **11 September 2026**; full
-application **11 December 2027**. Partly covered already — `SECURITY.md` is the
-vulnerability policy, `pip-audit` runs in CI, dependencies are hash-pinned.
-Missing is the bill of materials; `cyclonedx-py` over the lockfile in a CI job
-is most of it.
-
-### 5. Build the Android app for real
+### 4. Build the Android app for real
 The shared rules compile and pass 115 tests. `android/app/` has never been
 compiled, because this machine has no Android SDK. Until someone runs
 `gradle :app:assembleDebug`, the Android half is source code rather than
 software.
 
-### 6. Write the Android screens
+### 5. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
 and tested.
 
-### 7. Let people link apps across devices by hand
+### 6. Let people link apps across devices by hand
 `syncproto.canonical_app_key` joins the same app on two devices by normalising
 its name — a good guess, not a guarantee. A package named after its vendor
 rather than its product will not meet the desktop executable. A small screen
 saying "these two are the same app" closes it. Nothing depends on it: an
 unmatched app simply counts per-device.
 
-### 8. The remaining roadmap features
+### 7. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -164,9 +156,10 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **833 tests** | 718 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
+| **834 tests** | 719 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
+| **A software bill of materials, for the EU Cyber Resilience Act** | CI generates a CycloneDX 1.6 SBOM from `requirements.lock` with `cyclonedx-py`, validates it against the schema, and publishes it as a build artifact on every push. Regulation (EU) 2024/2847 requires one for products with digital elements sold in the EU; vulnerability-reporting obligations begin 11 September 2026, full application 11 December 2027. |
 | **Renamed to ProtBot** | Including the data directory, with a migration that never overwrites newer data and never deletes the old folder if the move fails. |
 | **Signed, machine-bound licence gate** | 14-day offline grace. Server errors never revoke; only an explicit refusal does. |
 | **A real distribution** | PyInstaller spec, Inno installer, working uninstaller. Never run — see above. |
