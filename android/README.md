@@ -170,21 +170,19 @@ opening straight away; it still works, it is one tap worse.
 
 ## Still to build
 
-- **Written, not verified: the in-app scanner, the app picker, limit editing,
-  and the insights screen.** All four now exist (`ui/ScanScreen.kt`,
-  `ui/AppPickerScreen.kt`, `ui/LimitEditScreen.kt`, `ui/InsightsScreen.kt`),
-  wired into `MainActivity.kt`, but `:app` has never compiled — no Android
-  SDK here, and `settings.gradle.kts` excludes the module entirely without
-  one. The scanner needed two new dependencies (CameraX, ML Kit's on-device
-  barcode reader) that have never resolved a dependency graph, let alone
-  run. Each screen's arithmetic lives in `:core` (`Insights.kt`) and is
-  tested; the screens, the camera binding and the permission flow are not.
-  Check those first on a real device — see STATUS.md.
-- A device-registration screen. Nothing on Android has ever called
-  `SyncClient.register`; the scanner works around this by auto-registering
-  with the phone's model name the first time someone scans a code, which is
-  enough to make linking work but not enough to let someone choose a name
-  they will recognise later.
+- **Written, not verified: the in-app scanner, the app picker, limit
+  editing, the insights screen, and device-sync management.** All five now
+  exist (`ui/ScanScreen.kt`, `ui/AppPickerScreen.kt`, `ui/LimitEditScreen.kt`,
+  `ui/InsightsScreen.kt`, `ui/DeviceSyncScreen.kt`), wired into
+  `MainActivity.kt`, but `:app` has never compiled — no Android SDK here,
+  and `settings.gradle.kts` excludes the module entirely without one. The
+  scanner needed two new dependencies (CameraX, ML Kit's on-device barcode
+  reader) that have never resolved a dependency graph, let alone run.
+  `DeviceSyncScreen.kt` is the first thing on Android to ever call
+  `SyncClient.register`/`unregister`. Each screen's arithmetic lives in
+  `:core` (`Insights.kt`) and is tested; the screens, the camera binding
+  and the permission flow are not. Check those first on a real device —
+  see STATUS.md.
 - Manually linking an app on one device to the same app on the other, for
   packages named after a vendor rather than the product — the canonical key
   is a good guess, not a guarantee. The desktop app has this now (the Files

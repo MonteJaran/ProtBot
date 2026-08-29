@@ -51,20 +51,13 @@ Waits on #3 above.
 
 ### 2. Build the Android app for real
 The shared rules compile and pass 130 tests. `android/app/` — including the
-in-app QR scanner and the app picker, limit-edit and insights screens, all
-written since — has never been compiled, because this machine has no Android
-SDK. Until someone runs `gradle :app:assembleDebug`, the Android half is
-source code rather than software. See "Written but never executed" below for
-what specifically has not run and what to check first.
+in-app QR scanner, the app picker, limit-edit, insights and device-sync
+screens, all written since — has never been compiled, because this machine
+has no Android SDK. Until someone runs `gradle :app:assembleDebug`, the
+Android half is source code rather than software. See "Written but never
+executed" below for what specifically has not run and what to check first.
 
-### 3. A device-registration screen on Android
-Nothing on Android has ever called `SyncClient.register` — there is no
-Settings-equivalent screen to type a device name into. The QR scanner works
-around it by auto-registering with the phone's model name the first time
-someone scans a code, so linking a device does not depend on this existing.
-Registering deliberately, with a chosen name, still does.
-
-### 4. The remaining roadmap features
+### 3. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -94,9 +87,11 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
   so `gradle :core:test` (which does run, in CI and here) never touches it.
   Newest and least tested: the in-app QR scanner (`ui/ScanScreen.kt`, two new
   dependencies — CameraX and ML Kit's on-device barcode reader — neither of
-  which has resolved a Gradle dependency graph, let alone run) and three
+  which has resolved a Gradle dependency graph, let alone run) and four
   Compose screens (`ui/AppPickerScreen.kt`, `ui/LimitEditScreen.kt`,
-  `ui/InsightsScreen.kt`). The arithmetic each screen needs is in `:core`
+  `ui/InsightsScreen.kt`, `ui/DeviceSyncScreen.kt` — the last one calls
+  `SyncClient.register`/`unregister`, the first time either has ever been
+  called from Android). The arithmetic each screen needs is in `:core`
   (`Insights.kt`) and is tested — a real overflow bug in it was caught and
   fixed by that test suite before this note was written, which is exactly
   the case for keeping logic there instead of in `:app`. The screens
@@ -204,11 +199,12 @@ Recorded so nobody rediscovers them as bugs.
 - **A link code is a secret with a short life.** Whoever scans it joins the
   device group and can read its totals. Five minutes, single use, and the
   dialog says so.
-- **Scanning a code on Android registers the device with its model name,
-  not a chosen one.** There is no registration screen yet (#3 above) to ask
-  for a better name first, and a device the user can identify in a list
-  later is a smaller loss than blocking linking on a screen that does not
-  exist.
+- **Scanning a code on Android without visiting "Manage sync" first still
+  registers the device under its model name, not a chosen one.** A
+  registration screen exists now (`ui/DeviceSyncScreen.kt`) for anyone who
+  wants to pick a name, but the scanner deliberately does not force a
+  detour through it: a device the user can identify in a list later is a
+  smaller loss than making linking two steps instead of one.
 - **The Android app has never been compiled.** The shared rules have.
 - **The changelog has no released version.** Nothing has shipped. A test fails
   if that claim stops being true without a version being added.

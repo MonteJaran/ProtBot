@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
 /**
  * Which screen is showing.
  *
- * Held here rather than through a navigation library: five screens, and
+ * Held here rather than through a navigation library: six screens, and
  * nothing but Home has a deep link into it (the QR-code App Link opens
  * MainActivity itself, always at Home -- see AndroidManifest.xml), so a
  * `when` over a sealed class covers it. One fewer new dependency in code
@@ -43,6 +43,7 @@ private sealed class Screen {
     data object AppPicker : Screen()
     data class LimitEdit(val packageName: String, val label: String) : Screen()
     data object Insights : Screen()
+    data object DeviceSync : Screen()
     data object Scan : Screen()
 }
 
@@ -54,6 +55,7 @@ private fun AppRoot() {
         is Screen.Home -> HomeScreen(
             onManageApps = { screen = Screen.AppPicker },
             onInsights = { screen = Screen.Insights },
+            onDeviceSync = { screen = Screen.DeviceSync },
             onScan = { screen = Screen.Scan },
         )
         is Screen.AppPicker -> AppPickerScreen(
@@ -68,12 +70,21 @@ private fun AppRoot() {
             onDone = { screen = Screen.AppPicker },
         )
         is Screen.Insights -> InsightsScreen(onBack = { screen = Screen.Home })
+        is Screen.DeviceSync -> DeviceSyncScreen(
+            onBack = { screen = Screen.Home },
+            onLinkDevice = { screen = Screen.Scan },
+        )
         is Screen.Scan -> ScanScreen(onDone = { screen = Screen.Home })
     }
 }
 
 @Composable
-private fun HomeScreen(onManageApps: () -> Unit, onInsights: () -> Unit, onScan: () -> Unit) {
+private fun HomeScreen(
+    onManageApps: () -> Unit,
+    onInsights: () -> Unit,
+    onDeviceSync: () -> Unit,
+    onScan: () -> Unit,
+) {
     val context = LocalContext.current
 
     // Re-read on every composition: the user grants these in Settings and
@@ -131,11 +142,19 @@ private fun HomeScreen(onManageApps: () -> Unit, onInsights: () -> Unit, onScan:
         HorizontalDivider()
         Text("Cross-device sync", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Scan the code shown on your PC's Devices tab to link this phone " +
-                "and share a limit across both.",
+            "Share a limit with your other ProtBot devices, so an hour on the " +
+                "PC and an hour here add up to the limit instead of each device " +
+                "allowing the full amount.",
             style = MaterialTheme.typography.bodyMedium,
         )
-        OutlinedButton(onClick = onScan) { Text("Scan a link code") }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onDeviceSync) { Text("Manage sync") }
+            // Scanning still works without visiting "Manage sync" first --
+            // it registers this device automatically if nothing has yet
+            // (see ScanScreen.kt) -- so this stays a direct shortcut rather
+            // than folding into that screen.
+            OutlinedButton(onClick = onScan) { Text("Scan a link code") }
+        }
     }
 }
 

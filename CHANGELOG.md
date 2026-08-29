@@ -38,8 +38,9 @@ any of it. The first entry under a real version number will be written when
   rules — focus hours, limit semantics, usage accounting, the protected list,
   and now Insights' today/this-week aggregation. The shared module compiles
   and passes its tests; the Android layer — including an in-app QR scanner
-  (CameraX + ML Kit) and the app picker, limit-edit and insights screens
-  added since — has never been built, because it needs an SDK.
+  (CameraX + ML Kit), the app picker, limit-edit and insights screens, and a
+  device-sync screen to register or unregister this phone by name — added
+  since, has never been built, because it needs an SDK.
 - **Scheduled focus hours.** A recurring window that tightens existing limits,
   including windows that cross midnight.
 - **Data retention.** History older than the configured window is dropped on
