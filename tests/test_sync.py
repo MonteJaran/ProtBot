@@ -815,6 +815,31 @@ class TestAuthentication:
         client = SyncClient(db, config)
         assert client._transport.token == "tok-xyz"
 
+    def test_a_token_set_after_construction_is_picked_up_without_a_restart(
+            self, db, config, synced):
+        # The bug this guards: main.py builds one SyncClient at startup and
+        # its background thread keeps calling sync_once() on that same
+        # instance for the rest of the session. Registering a device from
+        # the Devices tab -- the only way anyone registers -- happens after
+        # that, while the app keeps running. If the token were captured once
+        # at construction, every request for the rest of the session would
+        # go out unauthenticated despite AUDIT SF-09, silently, until the
+        # user happened to restart the app.
+        client = SyncClient(db, config)
+        assert client._transport.token == ""
+
+        config.set("device_token", "tok-set-later")
+        assert client._transport.token == "tok-set-later"
+
+    def test_an_injected_transport_is_never_replaced(self, db, config, synced):
+        # Tests (and anything else that constructs one explicitly) must get
+        # back exactly the transport they passed in, not a rebuilt one --
+        # this is what makes FakeTransport-based tests possible at all.
+        transport = FakeTransport()
+        client = SyncClient(db, config, transport=transport)
+        config.set("device_token", "tok-xyz")
+        assert client._transport is transport
+
     def test_authed_request_attaches_the_token(self, monkeypatch, config):
         captured = {}
 

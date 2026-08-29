@@ -142,3 +142,13 @@ any of it. The first entry under a real version number will be written when
   (`sync/SyncClient.kt`, `sync/Transport.kt`) gained the same token and a new
   `joinLink`, for parity — unverified along with the rest of `:app`; see
   STATUS.md.
+- **The SF-09 fix above was undoing itself in the most common case.**
+  `SyncClient` is built once at startup and its background thread reuses
+  that same instance for the rest of the session; its transport's token was
+  fixed at that moment. Registering a device from the Devices tab while the
+  app is already running — the only way anyone registers — wrote a fresh
+  token to config that this client's requests never picked up, silently
+  going unauthenticated until the next restart. The transport is rebuilt
+  from current config on every use now. The Android scanner had the same
+  bug in miniature: joining right after an in-flow auto-registration reused
+  a client whose transport predated the token it had just been issued.

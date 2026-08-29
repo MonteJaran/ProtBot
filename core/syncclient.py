@@ -182,7 +182,9 @@ class SyncClient:
     def __init__(self, db, config, transport=None) -> None:
         self.db = db
         self.config = config
-        self._transport = transport or build_transport(config)
+        # None in production; tests inject a fixed FakeTransport and expect
+        # it back unchanged (see _transport below).
+        self._injected_transport = transport
 
         self._lock = threading.RLock()
         self._thread = None
@@ -202,6 +204,28 @@ class SyncClient:
         self._uploaded_date = ""
         self._backoff = BACKOFF_START_SEC
         self._last_error = ""
+
+    @property
+    def _transport(self) -> "Transport":
+        """
+        A fresh Transport per use in production, not one fixed at
+        construction time.
+
+        This client is built once, at startup (main.py), and its background
+        thread keeps calling sync_once() on the same instance for the rest
+        of the session. If the token were captured once here, registering a
+        device from the Devices tab while the app is already running -- the
+        only way anyone registers -- would write a fresh device_token to
+        config that this client's requests never picked up, silently
+        undoing the AUDIT SF-09 fix until the next restart. build_transport
+        re-reads config on every call, so a token (or a changed server_url)
+        set after construction takes effect on the very next request.
+
+        Tests inject a fixed transport through the constructor and get
+        exactly that back, unchanged -- this only rebuilds the production
+        default.
+        """
+        return self._injected_transport or build_transport(self.config)
 
     # ── The switch ───────────────────────────────────────────────────────
 

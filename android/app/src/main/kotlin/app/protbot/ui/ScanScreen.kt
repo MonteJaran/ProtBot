@@ -87,15 +87,14 @@ fun ScanScreen(onDone: () -> Unit) {
                 status = "Joining…"
                 scope.launch {
                     val repository = UsageRepository.get(context)
-                    val client = SyncClientFactory.create(context, repository)
+                    var client = SyncClientFactory.create(context, repository)
 
-                    // No Android screen registers a device yet (nothing has
-                    // ever called SyncClient.register on this platform) --
-                    // scanning a link code is, in effect, the moment sync
-                    // turns on for this phone, exactly as registering is for
-                    // the desktop app. Auto-register with the device model
-                    // rather than blocking the whole feature on a screen
-                    // that does not exist.
+                    // Registering (Device Sync, or right here) works without
+                    // visiting that screen first -- scanning a link code is,
+                    // in effect, the moment sync turns on for this phone if
+                    // it has not already, exactly as registering is on the
+                    // desktop app. Auto-register with the device model
+                    // rather than forcing a detour through a second screen.
                     if (!client.enabled) {
                         status = "Registering this device…"
                         val name = android.os.Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android"
@@ -105,6 +104,14 @@ fun ScanScreen(onDone: () -> Unit) {
                             handled = false
                             return@launch
                         }
+                        // register() only wrote the new id and token to
+                        // SharedPreferences -- client's own HttpTransport had
+                        // its bearer token fixed at construction, before
+                        // registration, so it is still the empty one. Rebuild
+                        // rather than reuse, or the join call below (the
+                        // first authenticated request this flow makes) goes
+                        // out with no Authorization header at all.
+                        client = SyncClientFactory.create(context, repository)
                         status = "Joining…"
                     }
 
