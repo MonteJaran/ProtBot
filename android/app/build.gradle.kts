@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application") version "8.7.3"
     kotlin("android") version "2.0.21"
-    id("com.google.devtools.ksp") version "2.0.21-1.0.28"
+    id("com.google.devtools.ksp") version "2.3.11"
 }
 
 android {
