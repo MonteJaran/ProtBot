@@ -1,9 +1,11 @@
 name: CI
 
+# Disabled on push/PR at the owner's request: the account is billing-locked
+# (STATUS.md), the project is pre-release, and a workflow that only ever
+# fails on "account locked" is noise, not signal. workflow_dispatch is left
+# in so this can still be run by hand, and re-enabling later is restoring
+# the two triggers below, not rebuilding the file.
 on:
-  push:
-    branches: ["**"]
-  pull_request:
   workflow_dispatch:
 
 concurrency:

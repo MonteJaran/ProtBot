@@ -23,18 +23,19 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 885 tests below are only as good as the last time someone ran them by hand. |
-| 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
-| 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
-| 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
-| 5 | **Publish a contact address** | Free, but it is a decision | `PRIVACY.md` and `SECURITY.md` both hold a placeholder. GDPR Article 13 *requires* the controller's contact details; a policy without one is not compliant. Whether that is a personal email or `security@` on your own domain is your call, which is why neither file guesses. A test fails the day either placeholder is deleted without a real address replacing it. |
-| 6 | **Confirm the licence** | Free, effectively one-way | `LICENSE` states the all-rights-reserved default explicitly, which is right for something you intend to sell and keeps every option open. Open source instead is a deliberate, irreversible decision — a permissive licence cannot be recalled from copies people already hold. |
-| 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | An evening now, far cheaper than after a store listing is built on the name. |
-| 8 | **Get the server source into git** | An afternoon | `server/` holds request models and nothing else. The deployed function that holds user emails is unversioned, unreviewed and unbacked-up. Everything below that touches the server waits on this. |
-| 9 | **Build the sync server** — `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join` | A day, after #8 | Both clients are written and tested against a fake transport; there is nothing between them. `server/models.py` defines the wire format and spells out the three things a server must get right: cumulative totals, the client's own date, and matching on the canonical key. Until it exists the phone and the PC each count their own time, and QR linking has nothing to talk to. |
-| 10 | **Build `/license/verify`** | A morning, after #8 | The client calls it and already handles every failure mode — offline grace, refusal, server error. The endpoint does not exist. |
-| 11 | **Sign up a merchant of record** | ~5% of revenue | Paddle or Lemon Squeezy. The licence gate is built and there is nothing to sell keys with. Both handle EU VAT, which is the part you do not want to own. |
-| 12 | **Lawyer: review `PRIVACY.md`, write terms and a EULA** | A few hundred € | The policy is accurate to the code — every claim in it is checked by a test — but was not written by a lawyer, and there are no terms and no EULA at all. Before any public release or any money changing hands. |
+| 1 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
+| 2 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
+| 3 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
+| 4 | **Publish a contact address** | Free, but it is a decision | `PRIVACY.md` and `SECURITY.md` both hold a placeholder. GDPR Article 13 *requires* the controller's contact details; a policy without one is not compliant. Whether that is a personal email or `security@` on your own domain is your call, which is why neither file guesses. A test fails the day either placeholder is deleted without a real address replacing it. |
+| 5 | **Confirm the licence** | Free, effectively one-way | `LICENSE` states the all-rights-reserved default explicitly, which is right for something you intend to sell and keeps every option open. Open source instead is a deliberate, irreversible decision — a permissive licence cannot be recalled from copies people already hold. |
+| 6 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | An evening now, far cheaper than after a store listing is built on the name. |
+| 7 | **Get the server source into git** | An afternoon | `server/` holds request models and nothing else. The deployed function that holds user emails is unversioned, unreviewed and unbacked-up. Everything below that touches the server waits on this. |
+| 8 | **Build the sync server** — `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join` | A day, after #7 | Both clients are written and tested against a fake transport; there is nothing between them. `server/models.py` defines the wire format and spells out the three things a server must get right: cumulative totals, the client's own date, and matching on the canonical key. Until it exists the phone and the PC each count their own time, and QR linking has nothing to talk to. |
+| 9 | **Build `/license/verify`** | A morning, after #7 | The client calls it and already handles every failure mode — offline grace, refusal, server error. The endpoint does not exist. |
+| 10 | **Sign up a merchant of record** | ~5% of revenue | Paddle or Lemon Squeezy. The licence gate is built and there is nothing to sell keys with. Both handle EU VAT, which is the part you do not want to own. |
+| 11 | **Lawyer: review `PRIVACY.md`, write terms and a EULA** | A few hundred € | The policy is accurate to the code — every claim in it is checked by a test — but was not written by a lawyer, and there are no terms and no EULA at all. Before any public release or any money changing hands. |
+
+CI is off for now too, but that is not on this list: it is a choice, not something blocking anyone. See "Known-imperfect, deliberately" below for what that means and how to undo it.
 
 ---
 
@@ -46,7 +47,7 @@ Roughly in value order.
 The Android manifest declares `autoVerify="true"` for the device-link URL.
 Without the assetlinks file served from the domain, Android shows a chooser
 instead of opening ProtBot directly — it still works, it is one tap worse.
-Waits on #4 above.
+Waits on #3 above.
 
 ### 2. Build the Android app for real
 The shared rules compile and pass 130 tests. `android/app/` — including the
@@ -174,6 +175,16 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 Recorded so nobody rediscovers them as bugs.
 
+- **CI does not run on push or PR right now — turned off on purpose.** It was
+  never actually running anyway (the GitHub account is billing-locked, so
+  every job failed on that rather than testing anything), and paying to
+  unlock it has no payoff pre-release. `.github/workflows/ci.yml` still has
+  every job; only the `push`/`pull_request` triggers are removed, and
+  `workflow_dispatch` still runs it by hand from the Actions tab. Re-enable
+  by restoring those two triggers — see the comment at the top of the file.
+  Until then, "all tests pass" means the last time someone ran
+  `python -m pytest` / `gradle :core:test` locally, not a badge anyone can
+  trust unread.
 - **Focus hours is one window, not a scheduler.** Covers work hours, study
   hours, evenings. Multiple named blocks if anyone asks.
 - **Client-side licensing is deterrence, not security.** The machine belongs to
@@ -206,18 +217,20 @@ Recorded so nobody rediscovers them as bugs.
 
 ## Suggested order
 
-1. **Unlock billing.** Until CI runs you cannot trust a single push.
-2. **Microsoft Store account.** $19 to stop SmartScreen frightening everyone
+1. **Microsoft Store account.** $19 to stop SmartScreen frightening everyone
    who tries to install.
-3. **First real Windows build**, on a clean VM, through `BUILD.md`. Find out
+2. **First real Windows build**, on a clean VM, through `BUILD.md`. Find out
    what is broken.
-4. **The three decisions**: the domain, the contact address, the licence. No
+3. **The three decisions**: the domain, the contact address, the licence. No
    code, all required before the repo goes public.
-5. **Server into git, then the endpoints** — sync and linking first, licence
+4. **Server into git, then the endpoints** — sync and linking first, licence
    verification second.
-6. **Merchant of record.** The last mile to taking money.
-7. **Lawyer**, before any public release.
-8. **Then features** — and only then marketing. €50 of ads pointed at an app
+5. **Merchant of record.** The last mile to taking money.
+6. **Lawyer**, before any public release.
+7. **Then features** — and only then marketing. €50 of ads pointed at an app
    nobody can install is €50 spent teaching people it does not work.
 
-Steps 1–3 cost almost nothing and unblock everything else.
+Steps 1–2 cost almost nothing and unblock a lot. Re-enable CI (see
+"Known-imperfect, deliberately") whenever pushes are worth trusting without
+running the suite by hand first — probably around the time step 3 starts,
+since that is also roughly when the repo goes public.
