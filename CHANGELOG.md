@@ -100,3 +100,12 @@ any of it. The first entry under a real version number will be written when
   with a test that fails the build if one returns.
 - **The plan comparison advertised features that did not exist.** Removed, with
   a test that fails if an unimplemented feature is listed as included.
+- **The device id doubled as a login.** It travels in every sync request and
+  is shown back to the user in the Devices tab, so it was never a secret — yet
+  it was the only thing a request proved, including in one URL that put it
+  in the path where it would sit in server and proxy logs. Registration now
+  also issues a per-device token, sent as `Authorization: Bearer <token>` on
+  every call after. A second, unrelated poller in the Processes tab that
+  queried the server directly on its own schedule — and still put the id in
+  the URL — is removed; it predated the sync client this fix protects and had
+  drifted out of step with it. The server side of this still doesn't exist.

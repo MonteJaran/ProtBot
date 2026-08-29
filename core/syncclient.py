@@ -26,6 +26,13 @@ Four properties this has to hold, and the reasoning for each:
     a limit looser than what this device measured itself; see
     syncproto.merge_app_total.
 
+Registration also returns a token (AUDIT SF-09), stored alongside the device
+id and sent as `Authorization: Bearer <token>` on every call after. Without
+it the device id — sent in every payload — is the only credential a request
+carries, and it is not a secret: it is handed back by every sync response and
+shown to the user in the Devices tab. A server that only trusts an id from
+that world is trusting exactly what an eavesdropper already saw.
+
 There is no server implementing this yet. The endpoint paths and payloads come
 from server/models.py, and the client is tested against a fake transport, so
 what is verified is the client's behaviour on every response shape — including
@@ -75,7 +82,7 @@ class Transport:
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout
 
-    def post(self, path: str, payload: dict):
+    def post(self, path: str, payload: dict, token: str = ""):
         if not self.base_url:
             return None
         # Usage data leaves the machine here. Plain http would put it on the
@@ -91,13 +98,22 @@ class Transport:
             log.error("Could not encode a sync request: %s", e)
             return None
 
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": f"ProtBot/{__version__}",
+        }
+        # The token issued at registration (AUDIT SF-09). Without it the
+        # device id is the only credential, and it travels in every payload
+        # and would travel in the URL too — anyone who saw or guessed one
+        # could read or forge that device's data. Registration is the one
+        # call with no token to send yet.
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
         request = urllib.request.Request(
             url,
             data=body,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": f"ProtBot/{__version__}",
-            },
+            headers=headers,
             method="POST",
         )
         try:
@@ -147,6 +163,9 @@ class SyncClient:
         # from the group figure. See syncproto.merge_app_total.
         self._uploaded: dict = {}
         self._uploaded_date = ""
+        # From the last successful /sync response. 1 (just this device) until
+        # the first cycle completes.
+        self._device_count = 1
         self._backoff = BACKOFF_START_SEC
         self._last_error = ""
 
@@ -171,6 +190,15 @@ class SyncClient:
     @property
     def device_id(self) -> str:
         return str(self.config.get("device_id", "") or "").strip()
+
+    @property
+    def device_token(self) -> str:
+        """
+        The secret issued at registration (AUDIT SF-09). The device id is an
+        identifier, not a credential — this is what actually proves a request
+        came from this device, so every call after registration sends it.
+        """
+        return str(self.config.get("device_token", "") or "").strip()
 
     # ── What the monitor reads ───────────────────────────────────────────
 
@@ -220,6 +248,7 @@ class SyncClient:
                 "fresh": (syncproto.is_fresh(self._group_fetched_at)
                           and self._group_date == syncproto.local_date()),
                 "apps_known": len(self._group_totals),
+                "devices": self._device_count,
                 "last_error": self._last_error,
             }
 
@@ -285,8 +314,10 @@ class SyncClient:
         payload = syncproto.build_upload(self.device_id, local_totals)
         today = syncproto.local_date()
 
+        token = self.device_token
+
         if payload:
-            if self._transport.post(ENDPOINT_UPLOAD, payload) is None:
+            if self._transport.post(ENDPOINT_UPLOAD, payload, token=token) is None:
                 with self._lock:
                     self._last_error = "upload failed"
                 return False
@@ -298,13 +329,15 @@ class SyncClient:
                 self._uploaded = dict(local_totals)
                 self._uploaded_date = today
 
-        response = self._transport.post(ENDPOINT_SYNC, {"d": self.device_id})
+        response = self._transport.post(ENDPOINT_SYNC, {"d": self.device_id},
+                                        token=token)
         if response is None:
             with self._lock:
                 self._last_error = "sync fetch failed"
             return False
 
         totals = syncproto.parse_sync(response)
+        device_count = syncproto.parse_device_count(response)
         with self._lock:
             # A new day means our recorded upload is about yesterday. Keeping
             # it would subtract yesterday's seconds from today's group total.
@@ -314,10 +347,10 @@ class SyncClient:
             self._group_totals = totals
             self._group_fetched_at = time.time()
             self._group_date = today
+            self._device_count = device_count
             self._last_error = ""
 
-        log.debug("Synced: %d app(s), %d device(s).",
-                  len(totals), syncproto.parse_device_count(response))
+        log.debug("Synced: %d app(s), %d device(s).", len(totals), device_count)
         return True
 
     # ── App identity ─────────────────────────────────────────────────────
@@ -345,7 +378,7 @@ class SyncClient:
         if not payload:
             return
 
-        response = self._transport.post(ENDPOINT_APPS, payload)
+        response = self._transport.post(ENDPOINT_APPS, payload, token=self.device_token)
         if response is None:
             return
 
@@ -414,7 +447,17 @@ def register_device(config, device_name: str = "", email: str = "",
         log.warning("Device registration returned no id.")
         return ""
 
+    # The token proves this device owns that id on every later call (AUDIT
+    # SF-09); its absence isn't fatal — an old or fake server that doesn't
+    # send one yet leaves requests unauthenticated exactly as before, rather
+    # than refusing to register at all.
+    token = str(response.get("tok", "") or "").strip()
+    if not token:
+        log.warning("Device registration returned no token; "
+                   "requests will be unauthenticated.")
+
     config.set("device_id", device_id)
+    config.set("device_token", token)
     log.info("Device registered for sync.")
     return device_id
 
@@ -428,6 +471,7 @@ def unregister_device(config) -> None:
     app-id mapping would be wrong the moment the user registered again.
     """
     config.set("device_id", "")
+    config.set("device_token", "")
     config.set("server_app_ids", {})
     config.set("linked_devices", [])
     log.info("Device unregistered; sync is off.")

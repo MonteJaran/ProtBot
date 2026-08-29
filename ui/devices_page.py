@@ -92,6 +92,14 @@ def _api(config, method: str, path: str, body: dict = None):
     data = json.dumps(body).encode() if body else None
     headers = {"Content-Type": "application/json"}
 
+    # The device id travels in the request body (or, for registration, isn't
+    # known yet), but it isn't a secret — it's echoed back in every response
+    # and shown on this page. The token from registration is what actually
+    # proves the request came from this device (AUDIT SF-09).
+    token = (config.get("device_token") or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     req  = Request(url, data=data, headers=headers, method=method)
     with urlopen(req, timeout=10) as resp:
         return resp.status, json.loads(resp.read().decode())
@@ -467,7 +475,12 @@ class DevicesPage(ttk.Frame):
                 dev_id = resp.get("id", "")
                 if not dev_id:
                     raise ValueError("No ID returned from server.")
+                token = resp.get("tok", "")
+                if not token:
+                    log.warning("Registration returned no token; "
+                               "requests will be unauthenticated.")
                 self.config.set("device_id", dev_id)
+                self.config.set("device_token", token)
                 self.after(0, lambda: self._reg_done(dev_id))
             except Exception as exc:
                 # Bind the value into the lambda: `exc` is deleted when the
@@ -716,7 +729,12 @@ class DevicesPage(ttk.Frame):
 
         def _fetch():
             try:
-                _, data = _api(self.config, "GET", f"/group/{dev_id}")
+                # No device id in the path (AUDIT SF-09): the Authorization
+                # header _api() attaches already says which device is asking,
+                # so the server has no need for a second, unauthenticated way
+                # to name it — one that would otherwise sit in server, proxy
+                # and intermediary logs.
+                _, data = _api(self.config, "GET", "/group")
                 others = [
                     {
                         "id":        d["id"],

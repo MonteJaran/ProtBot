@@ -262,9 +262,14 @@ class FakeTransport:
     def __init__(self, responses=None):
         self.responses = responses or {}
         self.requests = []
+        # One entry per call to post(), in order — the token it was sent
+        # with. Kept alongside `requests` rather than folded into it so every
+        # test written against the (path, payload) shape keeps working.
+        self.tokens = []
 
-    def post(self, path, payload):
+    def post(self, path, payload, token=""):
         self.requests.append((path, payload))
+        self.tokens.append(token)
         response = self.responses.get(path)
         if isinstance(response, Exception):
             raise response
@@ -318,9 +323,13 @@ class TestSyncIsOffUntilTheUserTurnsItOn:
         assert transport.requests == []
 
     def test_unregistering_forgets_the_mapping_too(self, config, synced):
+        config.set("device_token", "secret-xyz")
         syncclient.unregister_device(config)
         assert config.get("device_id") == ""
         assert config.get("server_app_ids") == {}
+        # A token surviving unregistration would still authenticate as a
+        # device that, as far as the user is concerned, is no longer linked.
+        assert config.get("device_token") == ""
 
 
 class TestOneSyncCycle:
@@ -341,6 +350,45 @@ class TestOneSyncCycle:
         upload = transport.payload_for(syncclient.ENDPOINT_UPLOAD)
         assert upload["a"] == [[42, 900]]
         assert upload["z"] == syncproto.local_date()
+
+    def test_the_device_count_from_a_sync_is_exposed_in_status(
+            self, db, config, synced):
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {"42": 2400}, "devices": 2},
+        })
+        client = SyncClient(db, config, transport=transport)
+        client.sync_once()
+        assert client.status()["devices"] == 2
+
+    def test_a_stored_token_is_sent_with_every_request(self, db, config, synced):
+        # AUDIT SF-09: the device id travels in every payload and is not a
+        # secret, so what actually has to reach the server is this.
+        config.set("device_token", "secret-xyz")
+        db.start_session(synced, datetime.now().isoformat())
+        db.update_session_duration(1, 900)
+
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+
+        assert transport.tokens == ["secret-xyz", "secret-xyz"]
+
+    def test_no_stored_token_means_none_is_sent(self, db, config, synced):
+        # The `synced` fixture registers a device id but no token, matching
+        # every device that registered before a server issued one — sync must
+        # keep working unauthenticated rather than send a literal "None".
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        db.start_session(synced, datetime.now().isoformat())
+        db.update_session_duration(1, 900)
+        SyncClient(db, config, transport=transport).sync_once()
+
+        assert transport.tokens == ["", ""]
 
     def test_the_other_devices_time_becomes_available_to_the_limit_check(
             self, db, config, synced):
@@ -473,6 +521,23 @@ class TestRegistration:
         transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
         syncclient.register_device(config, "my-pc", transport=transport)
         assert "e" not in transport.payload_for(syncclient.ENDPOINT_REGISTER)
+
+    def test_registering_stores_the_token_the_server_gave(self, config):
+        # AUDIT SF-09: the id alone is not a credential, so the token that
+        # actually authenticates this device has to survive registration too.
+        transport = FakeTransport(
+            {syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-xyz"}})
+        syncclient.register_device(config, "my-pc", transport=transport)
+        assert config.get("device_token") == "secret-xyz"
+
+    def test_a_missing_token_does_not_fail_registration(self, config):
+        # An old or not-yet-updated server that only returns an id must not
+        # brick registration — it leaves this device unauthenticated, exactly
+        # as every device was before this existed, rather than refusing to
+        # turn sync on at all.
+        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        assert syncclient.register_device(config, "my-pc", transport=transport) == "abc123"
+        assert config.get("device_token") == ""
 
     @pytest.mark.parametrize("response", [None, {}, {"id": ""}, "not-json"])
     def test_a_failed_registration_leaves_sync_off(self, config, response):

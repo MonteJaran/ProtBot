@@ -42,12 +42,8 @@ class ProcessesPage(ttk.Frame):
         self.config = config
         self.monitor = monitor
         self.configure(style='TFrame')
-        self._synced_usage: dict = {}   # server_app_id → total_sec (legacy)
-        self._app_details: list = []    # list of {devId, serverId, name, category, sec, isOwn}
-        self._linked_device_count: int = 1
         self._build_ui()
         self.refresh()
-        self._schedule_sync()
 
     # ── Build UI ──────────────────────────────────────────────────────────────
 
@@ -214,37 +210,6 @@ class ProcessesPage(ttk.Frame):
             if selected_app_id and app_id == selected_app_id:
                 restore_iid = iid
 
-        # ── Cross-device rows (from Firebase sync via appDetails) ─────────────
-        # Use the resolved appDetails list so we show real names instead of "App #X".
-        # Only show entries that do NOT belong to this device (isOwn=False).
-        for detail in self._app_details:
-            if detail.get("isOwn", True):
-                continue   # already shown under "This PC" above
-            sec  = detail.get("sec", 0)
-            name = detail.get("name") or f"App #{detail.get('serverId', '?')}"
-            cat  = detail.get("category", "—")
-
-            # Use device name from server if available
-            dev_name     = detail.get("deviceName")
-            dev_platform = detail.get("devicePlatform") or ""
-            if dev_name:
-                if "Android" in dev_platform:
-                    dev_label = f"\U0001f4f1 {dev_name}"
-                elif dev_platform == "Windows":
-                    dev_label = f"\U0001f5a5 {dev_name}"
-                else:
-                    dev_label = f"\U0001f4f2 {dev_name}"
-            else:
-                dev_label = "\U0001f4f1 Mobile"
-
-            iid  = self._tree.insert(
-                "", 'end',
-                values=(dev_label, name, cat,
-                        "\u2014 Remote", _fmt_sec(sec), "\u2014",
-                        "\u2014", "\u2014", "\u2014"),
-                tags=('mobile',),
-            )
-
         if restore_iid:
             self._tree.focus(restore_iid)
             self._tree.selection_set(restore_iid)
@@ -253,7 +218,13 @@ class ProcessesPage(ttk.Frame):
         self._card_tracked._value_label.config(text=str(total_tracked))
         self._card_running._value_label.config(text=str(running_count))
         self._card_overlimit._value_label.config(text=str(over_limit_count))
-        self._card_devices._value_label.config(text=str(self._linked_device_count))
+        # Sourced from the monitor's own authenticated SyncClient (AUDIT
+        # SF-09) rather than this page polling the server a second, separate
+        # way. No sync_client, or nothing successfully synced yet, is exactly
+        # "just this device".
+        sync_client = getattr(self.monitor, 'sync_client', None)
+        device_count = sync_client.status()["devices"] if sync_client else 1
+        self._card_devices._value_label.config(text=str(device_count))
 
         # Show live monitor diagnostics
         poll_time = self.monitor.last_poll_time
@@ -282,42 +253,6 @@ class ProcessesPage(ttk.Frame):
         """Trigger an immediate poll and refresh after a short delay."""
         self.monitor.trigger_poll()
         self.after(800, self.refresh)
-
-    # ── Cross-device sync ─────────────────────────────────────────────────────
-
-    def _schedule_sync(self) -> None:
-        """Sync cross-device data every 15 minutes."""
-        self._do_sync()
-        self.after(900_000, self._schedule_sync)
-
-    def _do_sync(self) -> None:
-        """Fetch synced usage from all linked devices in background thread."""
-        import threading
-        import urllib.request
-        import json as _json
-
-        device_id = self.config.get("device_id", "")
-        server_url = self.config.get("server_url", "")
-        if not device_id or not server_url:
-            return
-
-        def _fetch():
-            try:
-                url = f"{server_url}/sync/{device_id}"
-                req = urllib.request.Request(url, method="GET")
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = _json.loads(resp.read().decode())
-                    self._synced_usage = data.get("apps", {})
-                    self._app_details  = data.get("appDetails", [])
-                    self._linked_device_count = data.get("devices", 1)
-                    self.after(0, self.refresh)
-            except Exception as e:
-                # Sync is best-effort, but a persistent failure needs to be
-                # findable rather than swallowed.
-                log.warning("Device sync failed: %s", e)
-
-        t = threading.Thread(target=_fetch, daemon=True)
-        t.start()
 
     # ── Set Limits ────────────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 698 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 703 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -42,29 +42,24 @@ than a commit.
 
 Roughly in value order.
 
-### 1. Authenticate the sync API (AUDIT SF-09)
-The device ID *is* the credential and it travels in the URL path, where it
-lands in server and proxy logs. Anyone holding or guessing one can read that
-user's data. Client plumbing is a day; the server half waits on #8 above.
-
-### 2. Publish `assetlinks.json` on protbot.app
+### 1. Publish `assetlinks.json` on protbot.app
 The Android manifest declares `autoVerify="true"` for the device-link URL.
 Without the assetlinks file served from the domain, Android shows a chooser
 instead of opening ProtBot directly — it still works, it is one tap worse.
 Waits on #4 above.
 
-### 3. The in-app QR scanner
+### 2. The in-app QR scanner
 `Linking.parsePayload` reads a scanned code and the manifest opens the app from
 one, so the stock-camera path is complete. What is missing is scanning from
 *inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
 machine with no Android SDK.
 
-### 4. Finish the accessibility work (AUDIT ST-06 remainder)
+### 3. Finish the accessibility work (AUDIT ST-06 remainder)
 DPI awareness and font sizes are done. Still missing: keyboard navigation,
 screen-reader labelling, a high-contrast mode. The EU Accessibility Act has
 applied to consumer software since June 2025.
 
-### 5. Generate an SBOM, for the EU Cyber Resilience Act
+### 4. Generate an SBOM, for the EU Cyber Resilience Act
 Regulation (EU) 2024/2847 applies to products with digital elements sold in the
 EU. Vulnerability-reporting obligations begin **11 September 2026**; full
 application **11 December 2027**. Partly covered already — `SECURITY.md` is the
@@ -72,33 +67,39 @@ vulnerability policy, `pip-audit` runs in CI, dependencies are hash-pinned.
 Missing is the bill of materials; `cyclonedx-py` over the lockfile in a CI job
 is most of it.
 
-### 6. Build the Android app for real
+### 5. Build the Android app for real
 The shared rules compile and pass 115 tests. `android/app/` has never been
 compiled, because this machine has no Android SDK. Until someone runs
 `gradle :app:assembleDebug`, the Android half is source code rather than
 software.
 
-### 7. Write the Android screens
+### 6. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
 and tested.
 
-### 8. Let people link apps across devices by hand
+### 7. Let people link apps across devices by hand
 `syncproto.canonical_app_key` joins the same app on two devices by normalising
 its name — a good guess, not a guarantee. A package named after its vendor
 rather than its product will not meet the desktop executable. A small screen
 saying "these two are the same app" closes it. Nothing depends on it: an
 unmatched app simply counts per-device.
 
-### 9. Make it an installable package (AUDIT ST-04 remainder)
+### 8. Make it an installable package (AUDIT ST-04 remainder)
 `main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
 drops the hack and simplifies the PyInstaller spec.
 
-### 10. The remaining roadmap features
+### 9. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
 installed the app.
+
+### 10. Have the sync server actually check the token
+`server/models.py` now documents the contract and the client sends
+`Authorization: Bearer <token>` on every call (AUDIT SF-09, this session).
+There is still no server to enforce it — waits on #8 in "Blocked on you"
+above, same as the rest of the sync endpoints.
 
 ---
 
@@ -152,6 +153,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **Cross-device sync** | A two-hour limit means two hours across both devices, not two hours each. Uploads are cumulative so a retry cannot double-count; the day is the client's day; merging subtracts this device's own stale contribution rather than taking the larger number. |
 | **QR device linking** | The PC shows a code, the phone scans it. The key travels in the URL fragment, which never reaches a web server. An https App Link, not a custom scheme, so the stock camera can open it. The characters stay on screen beside the code as a fallback. |
 | **A QR encoder** | `core/qrcode.py`, standard library only — byte mode, versions 1–10, all four error levels. Verified by reading generated symbols back with a real decoder, which caught two bugs that produced pixel-perfect unreadable codes. |
+| **Sync requests carry a credential (AUDIT SF-09, client half)** | The device id travels in every sync payload and is shown back to the user in the Devices tab, so it was never a secret — yet it was the only thing a request proved. Registration now also returns a per-device token, stored and sent as `Authorization: Bearer <token>` on every later call; the one URL that put the id in the path now doesn't. Also removed a second, undocumented poller that queried the server directly on its own timer, independent of and inconsistent with the audited sync client. Still needs a server that checks the token — see "Can be coded now" below. |
 
 ### Legal and compliance
 
@@ -172,7 +174,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **813 tests** | 698 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
+| **818 tests** | 703 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
 | **Renamed to ProtBot** | Including the data directory, with a migration that never overwrites newer data and never deletes the old folder if the move fails. |
