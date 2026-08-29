@@ -80,8 +80,18 @@ any of it. The first entry under a real version number will be written when
   satisfy in a frozen build.
 - **Dependencies are pinned by exact version and SHA-256 hash**
   (`requirements.lock`).
+- **ProtBot is now an installable package.** `main.py` no longer hand-rolls
+  `sys.path.insert`; `pyproject.toml` declares a build backend and a
+  `protbot` console-script entry point instead. `build.ps1` installs it
+  (editable) before PyInstaller runs, so `protbot.spec` imports
+  `core.version` directly rather than patching `sys.path` itself.
 
 ### Fixed
+
+- **The package could not actually be built.** `pyproject.toml` carried both
+  a PEP 639 `license` expression and a "License ::" trove classifier, which
+  current setuptools refuses as conflicting — invisible until something
+  actually ran `pip install -e .`, which nothing had.
 
 - **Usage accrued while the machine was asleep.** Closing the lid overnight
   with a browser open booked eight hours of "usage" and closed it on resume.

@@ -97,6 +97,17 @@ jobs:
         # requirements.txt.
         run: python -c "import psutil, plyer; print('runtime deps OK')"
 
+      - name: Install protbot as a package (AUDIT ST-04)
+        # What build.ps1 does before PyInstaller runs. Proves the packaging
+        # metadata actually resolves on the shipping OS, not just that the
+        # files parse. Doesn't import main.py itself -- that pulls in tkinter,
+        # which this runner does not have (see the `test` job's note on the
+        # Tk modules the suite cannot import).
+        run: |
+          python -m pip install -e . --no-deps
+          python -c "import core, ui; print('package imports OK')"
+          python -c "from importlib.metadata import entry_points as ep; names = ep(group='console_scripts').names; assert 'protbot' in names, list(names); print('entry point OK')"
+
       - name: Verify the packaging config
         # PyInstaller and Inno Setup cannot run here, but the spec, the
         # installer script and the launcher can be checked for drift.

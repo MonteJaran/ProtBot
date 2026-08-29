@@ -158,6 +158,61 @@ def test_the_ui_does_not_hardcode_a_version():
     assert '_APP_VERSION = "' not in text
 
 
+# ── Installable package, not sys.path.insert (ST-04 remainder) ────────────────
+
+def test_pyproject_declares_a_build_backend():
+    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r"^\[build-system\]", text, re.MULTILINE)
+    assert "setuptools" in text
+
+
+def test_pyproject_declares_the_console_script():
+    """
+    `pip install -e .` is what makes `core`/`ui` importable from any working
+    directory and puts `protbot` on PATH -- the replacement for main.py's old
+    sys.path.insert hack.
+    """
+    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r"^\[project\.scripts\]", text, re.MULTILINE)
+    assert re.search(r'^protbot\s*=\s*"main:main"', text, re.MULTILINE)
+
+
+def test_pyproject_has_no_conflicting_license_classifier():
+    """
+    Regression test for a real bug this ST-04 work uncovered: modern
+    setuptools refuses to build a package that carries both a PEP 639
+    `license` expression and a "License ::" trove classifier -- caught only
+    by actually running `pip install -e .`, which nobody had ever done.
+    """
+    text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'license = "LicenseRef-Proprietary"' in text
+    block = re.search(r"^classifiers\s*=\s*\[(.*?)\]", text, re.MULTILINE | re.DOTALL)
+    assert block, "pyproject.toml has no classifiers list"
+    assert "License ::" not in block.group(1)
+
+
+def test_main_does_not_hand_roll_sys_path():
+    text = (REPO_ROOT / "main.py").read_text(encoding="utf-8")
+    assert "sys.path.insert" not in text
+
+
+def test_packaging_spec_does_not_hand_roll_sys_path():
+    """
+    The spec used to sys.path.insert its own workaround to import
+    core.version at freeze time. Now that protbot is an installable package,
+    build.ps1 installs it (editable) before PyInstaller runs, so the spec can
+    just import core.version directly.
+    """
+    text = (REPO_ROOT / "packaging" / "protbot.spec").read_text(encoding="utf-8")
+    assert "sys.path.insert" not in text
+    assert "from core.version import" in text
+
+
+def test_build_script_installs_protbot_before_freezing():
+    text = (REPO_ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
+    assert "pip install -e ." in text
+
+
 # ── Dependency hygiene (BL-05, ST-07) ─────────────────────────────────────────
 
 def test_pystray_is_gone():

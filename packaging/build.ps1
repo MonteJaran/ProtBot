@@ -22,9 +22,19 @@ Set-Location $Root
 function Step($message) { Write-Host "==> $message" -ForegroundColor Cyan }
 function Ok($message)   { Write-Host "    $message" -ForegroundColor Green }
 
+# ── Install the package itself ────────────────────────────────────────────────
+# protbot.spec imports core.version directly (AUDIT ST-04) -- an editable
+# install is what makes that, and the two `python -c` calls below, work from
+# any working directory without a hand-rolled sys.path hack. Runtime
+# dependencies come from requirements.lock, not from this.
+Step 'Installing protbot (editable)'
+python -m pip install -e . --no-deps
+if ($LASTEXITCODE -ne 0) { throw 'Could not install protbot.' }
+Ok 'protbot installed'
+
 # ── Version, read from the one place that defines it ─────────────────────────
 Step 'Reading version'
-$Version = (python -c "import sys; sys.path.insert(0, '.'); from core.version import __version__; print(__version__)").Trim()
+$Version = (python -c "from core.version import __version__; print(__version__)").Trim()
 if (-not $Version) { throw 'Could not read version from core/version.py' }
 Ok "ProtBot $Version"
 
