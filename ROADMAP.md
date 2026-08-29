@@ -111,11 +111,49 @@ Premium cannot be sold at all until the monetization chain works. From
   signed and machine-bound, with a 14-day offline grace period; activation is a
   real flow. What remains is a `/license/verify` endpoint on the server and a
   merchant of record to sell keys
-- **SF-09** — the sync API has no authentication
+- **SF-09** — *partial*. The client now sends a per-device token as
+  `Authorization: Bearer <token>` on every sync call instead of relying on the
+  device id alone. What remains is a server that actually checks it
 - **ST-05** — the backend is not in version control
 
-Sequence: fix SF-08 and SF-09, commit the server, integrate a merchant of
-record, *then* build features 1–7.
+Sequence: finish SF-08 and SF-09's server half, commit the server, integrate a
+merchant of record, *then* build features 1–7.
+
+---
+
+## Under discussion
+
+Not scoped, not designed, and not started — recorded here only so the idea
+survives until it is.
+
+### Parent-controlled profiles
+A parent's phone or PC would hold a "parent" profile that sets what a linked
+"kid" profile is allowed: which apps, what limits, what schedule — configured
+remotely rather than on the monitored device itself.
+
+- **This is a different product, not a bigger feature.** Everything sync does
+  today is *usage totals flowing up* to be aggregated — it has no path for
+  *settings flowing down* to change what another device enforces, and no
+  concept of one profile having authority over another's configuration at
+  all. Building that is closer in size to cross-device sync itself than to
+  any single item above it.
+- **It also collides with `PRIVACY.md` as written**, which currently says
+  ProtBot "is not intended for children under 16" and puts the burden of
+  legality for monitoring another person on the person doing the installing.
+  A parent-controls-child mode needs its own consent story (a parent
+  consenting on a minor's behalf is not the same legal act as self-monitoring
+  consent), its own data-handling section, and likely its own regulatory
+  reading — COPPA in the US, the GDPR's Article 8 child's-consent age, the
+  EU's rules for services aimed at minors. None of that is a code change.
+  Whether ProtBot takes that on at all is the owner's call, made once,
+  because the licence file already calls it "software you intend to sell"
+  and that decision compounds.
+- **The device also stops being able to trust its own user.** Today's threat
+  model is explicit: the machine belongs to whoever runs it, so client-side
+  enforcement is deterrence, not security (`core/licensing.py`'s own words).
+  A kid profile needs the opposite property — resistant to being turned off
+  *by the person sitting at it* — which is a materially harder problem the
+  app has never had to solve.
 
 ---
 
