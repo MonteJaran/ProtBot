@@ -3,11 +3,17 @@
 Current state and remaining work. `AUDIT.md` is the historical record of what
 was found and fixed; this is the forward-looking list.
 
-**Where things stand:** 463 Python tests green on 3.10 and 3.12, plus 93
+**Where things stand:** 504 Python tests green on 3.10 and 3.12, plus 93
 Kotlin tests for the shared Android rules; lint clean. Every safety-critical
 and legal finding from the audit is closed or has its remaining part named
 below. What is left splits cleanly into *things only you can do* and *things
 anyone can code*.
+
+*Last re-audited 2026-08-29.* That pass found six things that were missing
+rather than half-built — no licence file, no third-party notices, no crash
+handling, no way to export your own data, no security policy, no changelog —
+plus one live legal gap: consent could be given and never withdrawn. All are
+now closed. What it could not close is listed below.
 
 ---
 
@@ -25,6 +31,8 @@ These are the real gates. No amount of coding moves them.
 | 5 | **Lawyer review of PRIVACY.md, plus ToS and a EULA** | A few hundred euros | The policy is accurate to the code but was not written by a lawyer. You also have no terms and no EULA at all. |
 | 6 | **Get the server source into git** | An afternoon | `server/` holds Pydantic models and nothing else. The deployed function holding user emails is unversioned, unreviewed and unbacked-up. |
 | 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | Cheaper now than after you have users. Also confirm you own the domain. |
+| 7b | **Decide a published contact address** | Free, but it is a decision | `PRIVACY.md` and `SECURITY.md` both have a placeholder. GDPR Article 13 *requires* the controller's contact details — a policy without one is not compliant. Whether that is your personal email or a `security@` on your own domain is your call, which is why neither file guesses. A test fails the day the placeholder is deleted without an address replacing it. |
+| 7c | **Confirm the licence** | Free, but effectively one-way | `LICENSE` now states the all-rights-reserved default explicitly, which is right for something you intend to sell and preserves every option. If you would rather it were open source, decide that deliberately: a permissive licence cannot be recalled from copies people already hold. |
 | 8 | **A clean Windows VM** | Free | Nothing in `packaging/` or `core/tray.py` has ever run. See below. |
 
 ---
@@ -83,7 +91,20 @@ The code says ProtBot everywhere, and `core/paths.py` migrates an existing
 is the only thing that finds a previous install's data and **must never be
 renamed with the app**; there is a test that fails if it is.
 
-### 7. Linking apps across devices by hand
+### 7. An SBOM, for the EU Cyber Resilience Act
+Regulation (EU) 2024/2847 applies to "products with digital elements" made
+available in the EU. Vulnerability-reporting obligations begin **11 September
+2026** and the regulation applies in full from **11 December 2027**. It expects
+a software bill of materials, a vulnerability-handling process, security
+updates over a defined support period, and CE marking.
+
+Partly done already: `SECURITY.md` is the vulnerability policy, `pip-audit`
+runs in CI, and `requirements.lock` pins by hash. Missing is a generated SBOM —
+`cyclonedx-py` over the lockfile in a CI job is most of it. Not urgent with
+zero users and nothing released, but the dates are close enough to plan around
+rather than discover.
+
+### 8. Linking apps across devices by hand
 `syncproto.canonical_app_key` joins the same app on two devices by normalising
 its name, and it is a good guess rather than a guarantee — a package named
 after its vendor instead of its product will not match the desktop executable.
@@ -112,6 +133,12 @@ Recorded so nobody rediscovers them as bugs.
   limit against a two-hour-old guess is the worse failure.
 - **The Android app has never been compiled.** The shared rules have; the
   Android layer needs an SDK this machine does not have.
+- **The changelog has no released version in it.** Nothing has shipped, so
+  every entry sits under Unreleased. A test fails if that claim stops being
+  true without a version being added.
+- **The export leaves out the licence blob and the device id.** They are
+  credentials, and an export is a file the user may send to someone else. The
+  file says what was left out and why, rather than omitting it silently.
 
 ---
 
@@ -133,6 +160,22 @@ started and needs an entitlement Apple grants case by case.
 Cross-device sync is written on both platforms and wired into both limit
 checks, so an hour on the phone plus an hour on the PC reaches a two-hour
 limit. The server it talks to does not exist yet — item 4b above.
+
+## What the 2026-08-29 re-audit closed
+
+Recorded so the next audit does not rediscover them.
+
+| Gap | Why it mattered | Closed by |
+|---|---|---|
+| No `LICENSE` | A public repo with no licence is all-rights-reserved by default and nobody can tell. Some tooling reads the absence as permission. | `LICENSE`, plus `license` metadata in `pyproject.toml` |
+| No third-party notices | psutil (BSD-3-Clause) and plyer (MIT) both require their notice to be reproduced in a binary distribution. Shipping without one is a licence breach. | `THIRD_PARTY_NOTICES.md`, bundled by the spec and installer, with a test that fails if the lockfile and the notices drift apart |
+| Installer "licence" page showed the privacy policy | It asked the user to *accept* a privacy policy, which is not what a policy is for. | `LicenseFile` now points at `LICENSE`; the policy is shown as information beforehand |
+| No crash handling | A frozen build has no console. An exception on a background thread killed the monitor silently — limits stopped being enforced while the window kept showing old numbers. | `core/crash.py`, covering the main thread, background threads and Tk callbacks |
+| No data export | The app could delete everything (Art. 17) and hand back nothing (Art. 15, Art. 20). | `core/dataexport.py` and Settings → **Export My Data**; credentials deliberately excluded |
+| **Consent could not be withdrawn** | Art. 7(3) requires withdrawal to be as easy as giving consent. `revoke_consent` and `open_policy` existed and *nothing in the UI called either* — consent was given once at first run and never revisitable. | Settings → **Withdraw Consent** and **Read Privacy Policy** |
+| No security policy | Nowhere to report a vulnerability, and the known-and-accepted weaknesses were undocumented. | `SECURITY.md` |
+| No changelog | `core/updates.py` tells users to update without saying what changed — which is also how a security fix goes out looking routine. | `CHANGELOG.md` |
+| No dependency scanning | Pinning by hash makes builds reproducible and also freezes any advisory published after the pin. | `pip-audit` in CI against `requirements.lock`, plus Dependabot |
 
 ## Suggested order
 

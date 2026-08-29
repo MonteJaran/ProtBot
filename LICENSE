@@ -1,0 +1,46 @@
+ProtBot — Licence
+
+Copyright (c) 2026 Dejan Radoman. All rights reserved.
+
+This software and its source code are made available for reference. They are
+not placed in the public domain and are not released under an open-source
+licence.
+
+You may:
+
+  * read the source code, and
+  * run the software as installed from an official build.
+
+You may not, without prior written permission from the copyright holder:
+
+  * copy, modify, translate or create derivative works;
+  * redistribute the software or its source, in original or modified form;
+  * sell, sublicense, rent or lease it;
+  * remove or alter this notice or the notices in THIRD_PARTY_NOTICES.md.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+ProtBot bundles third-party components under their own licences. Those
+licences govern those components and are reproduced in full in
+THIRD_PARTY_NOTICES.md.
+
+---
+
+Why this file exists, and what to consider changing
+
+A public repository with no licence file is not "open" — it is *all rights
+reserved by default*, and nobody may legally copy or reuse it. That default
+is the right one for software you intend to sell, but leaving it implicit
+means nobody can tell what they are allowed to do, and some hosts and stores
+ask for an explicit licence. This file states the default rather than
+changing it.
+
+If you would rather the project were open source, that is a deliberate and
+**effectively irreversible** decision: a permissive licence, once published,
+cannot be recalled from the copies people already have. Decide it on purpose,
+not by leaving the field blank.

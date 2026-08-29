@@ -34,7 +34,13 @@ VersionInfoVersion={#AppVersion}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-LicenseFile=..\PRIVACY.md
+; The licence page shows the licence. It used to show PRIVACY.md, from before
+; there was a LICENSE file — which made the installer ask the user to "accept"
+; a privacy policy, something a policy is not for. The policy is now shown as
+; information beforehand, and the real consent gate is still the one inside the
+; app, which records what was accepted and when.
+LicenseFile=..\LICENSE
+InfoBeforeFile=..\PRIVACY.md
 OutputDir=..\dist\installer
 OutputBaseFilename={#AppName}-{#AppVersion}-setup
 SetupIconFile=..\ProtBot.ico

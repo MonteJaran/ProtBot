@@ -3,6 +3,18 @@ name = "protbot"
 version = "1.0.0"   # keep in sync with core/version.py (a test enforces this)
 description = "Windows application usage tracker and limiter"
 requires-python = ">=3.10"
+# Proprietary, all rights reserved. Stated explicitly because a project with
+# no licence field reads as "the author forgot", and some tooling treats the
+# absence as permission. See LICENSE.
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+classifiers = [
+    "License :: Other/Proprietary License",
+    "Environment :: Win32 (MS Windows)",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
 dependencies = [
     "psutil>=5.9.0",
     "plyer>=2.1.0",

@@ -92,8 +92,15 @@ retained until you request deletion.
 
 - **Use ProtBot entirely offline.** Never register a device and nothing is
   ever transmitted.
-- **See your data.** It is a standard SQLite database at the path above. The
-  Export CSV button on the Processes tab produces a readable copy.
+- **See your data.** It is a standard SQLite database at the path above, and
+  the Export CSV button on the Processes tab produces a spreadsheet of your
+  usage.
+- **Take your data with you.** Settings → Data → **Export My Data** writes
+  everything ProtBot holds — your settings, your tracked-app list and your
+  full usage history — to a single JSON file you choose the location of. Your
+  licence and sync credentials are deliberately left out, so the file is safe
+  to send on to someone else. This is the GDPR Art. 15 and Art. 20 right, and
+  you do not have to ask us for it: it is a button.
 - **Delete your data.** Settings → Delete All Data removes your usage history,
   your tracked-app list, your settings and the diagnostic log from this PC.
 

@@ -9,7 +9,7 @@ from tkinter import messagebox
 # Ensure we can import our modules regardless of working directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core import licensing, logging_setup, tray, updates
+from core import crash, licensing, logging_setup, tray, updates
 from core.config import Config
 from core.consent import has_consented, record_consent, show_consent_dialog
 from core.database import Database
@@ -94,8 +94,14 @@ def main() -> None:
 
     config = Config()
 
+    # Route unhandled exceptions into the log now that there is one. A frozen
+    # build has no console, so without this a crash on any thread leaves the
+    # user with nothing to send and the monitor silently stopped.
+    crash.install()
+
     # ── Tkinter root ──────────────────────────────────────────────────────────
     root = tk.Tk()
+    crash.install_tk(root)
 
     # ── Privacy consent gate ──────────────────────────────────────────────────
     # Must run before the monitor starts: the monitor is what records usage, so

@@ -121,6 +121,19 @@ class Config:
             self._data[key] = value
             self.save()
 
+    def all(self) -> dict:
+        """
+        Every setting, as a copy.
+
+        A copy rather than the live dict: handing out the real one would let a
+        caller mutate settings without going through set(), so the change would
+        never be written to disk and would vanish at the next restart. Used by
+        the data export (core/dataexport.py), which must not be able to alter
+        what it is reporting.
+        """
+        with self._lock:
+            return dict(self._data)
+
     def save(self) -> bool:
         """
         Write the config atomically.

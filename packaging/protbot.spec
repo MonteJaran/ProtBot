@@ -34,6 +34,12 @@ a = Analysis(
         # can fall back to the bundled policy when the site is unreachable.
         (str(ICON), "."),
         (str(ROOT / "PRIVACY.md"), "."),
+        # Not optional. The BSD-3-Clause and MIT licences of the bundled
+        # dependencies both require their notice to be reproduced in a binary
+        # distribution, so these travel with the build, not just the repo.
+        # tests/test_packaging_build.py fails if either is dropped.
+        (str(ROOT / "LICENSE"), "."),
+        (str(ROOT / "THIRD_PARTY_NOTICES.md"), "."),
     ],
     hiddenimports=[
         # plyer resolves its platform backend by string at call time, so

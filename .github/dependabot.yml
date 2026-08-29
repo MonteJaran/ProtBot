@@ -1,0 +1,35 @@
+version: 2
+
+# Dependencies are pinned by exact version and SHA-256 hash in
+# requirements.lock, which is what makes a build reproducible — and also what
+# makes them go stale silently. Dependabot is the other half of that trade:
+# pinning without a mechanism to move the pins forward is how a project ships
+# a two-year-old dependency with a published advisory against it.
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "deps"
+
+  # Actions are pinned by major version in the workflow. These updates are
+  # usually uninteresting, but a compromised or abandoned action is a supply
+  # chain problem, and noticing one that has stopped moving is worth the noise.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "android"]
+    commit-message:
+      prefix: "deps"

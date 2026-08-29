@@ -100,6 +100,26 @@ jobs:
           python -m pip install pytest
           python -m pytest tests/test_packaging_build.py -v
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      - name: Audit the pinned dependencies
+        # requirements.lock is what a release actually installs, so it is what
+        # gets audited. Pinning by hash makes builds reproducible and also
+        # freezes any advisory published after the pin was taken — this job is
+        # what stops that going unnoticed.
+        run: pip-audit --requirement requirements.lock --strict --progress-spinner off
+
   android-core:
     name: Android shared rules
     runs-on: ubuntu-latest

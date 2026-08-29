@@ -458,6 +458,10 @@ class SettingsPage(ttk.Frame):
 
         ttk.Button(btn_row, text="Open Data Folder",
                    command=lambda: self._open_data_folder(data_dir)).pack(side='left', padx=(0, 8))
+        # GDPR Art. 15 and 20: the app could already delete everything, but had
+        # no way to hand any of it back. See core/dataexport.py.
+        ttk.Button(btn_row, text="Export My Data",
+                   command=self._export_my_data).pack(side='left', padx=(0, 8))
         ttk.Button(btn_row, text="Clear All Usage Data",
                    command=self._clear_all_data, style='Danger.TButton').pack(side='left')
 
@@ -466,6 +470,113 @@ class SettingsPage(ttk.Frame):
                       "uploaded unless you register this device on the Devices tab.",
                  bg=BG, fg=TEXT2, font=('Segoe UI', 9), wraplength=580, justify='left',
                  ).pack(anchor='w', padx=32, pady=(2, 6))
+
+        # GDPR Art. 7(3): withdrawing consent must be as easy as giving it.
+        # Both of these existed in core/consent.py and nothing in the UI
+        # reached them, so consent could be given once at first run and never
+        # revisited — and the policy could not be re-read from inside the app,
+        # which Art. 12 expects to remain accessible rather than shown once.
+        consent_row = ttk.Frame(parent, style='TFrame')
+        consent_row.pack(anchor='w', padx=32, pady=(8, 4))
+
+        ttk.Button(consent_row, text="Read Privacy Policy",
+                   command=self._open_privacy_policy).pack(side='left', padx=(0, 8))
+        ttk.Button(consent_row, text="Withdraw Consent",
+                   command=self._withdraw_consent).pack(side='left')
+
+        tk.Label(parent, text=self._consent_summary(),
+                 bg=BG, fg=TEXT2, font=('Segoe UI', 9), wraplength=580, justify='left',
+                 ).pack(anchor='w', padx=32, pady=(2, 8))
+
+    def _consent_summary(self) -> str:
+        """When the user accepted the policy, so the record is visible to them."""
+        accepted_at = str(self.config.get("consent_at", "") or "")
+        if not accepted_at:
+            return "You have not accepted the privacy policy."
+        return f"You accepted the privacy policy on {accepted_at[:10]}."
+
+    def _open_privacy_policy(self) -> None:
+        from core import consent
+
+        try:
+            consent.open_policy()
+        except Exception as exc:
+            messagebox.showerror("Could not open the policy", str(exc), parent=self)
+
+    def _withdraw_consent(self) -> None:
+        """
+        Clear consent, so the gate is shown again next launch.
+
+        Deliberately does not delete anything. Withdrawing consent and erasing
+        data are separate rights (Art. 7(3) and Art. 17), and silently wiping
+        someone's history because they wanted to re-read the policy would be a
+        nasty surprise. The dialog points at the other button for that.
+        """
+        from core import consent
+
+        if not messagebox.askyesno(
+            "Withdraw consent",
+            "ProtBot will stop recording and ask you to review the privacy "
+            "policy again the next time it starts.\n\n"
+            "Your existing data is kept — use Clear All Usage Data if you "
+            "want it deleted as well.\n\nWithdraw consent now?",
+            parent=self,
+        ):
+            return
+
+        consent.revoke_consent(self.config)
+        try:
+            self.monitor.stop()
+        except Exception:
+            # Recording must stop even if the monitor was not running, and a
+            # failure here should not leave consent looking un-withdrawn.
+            pass
+
+        messagebox.showinfo(
+            "Consent withdrawn",
+            "Recording has stopped. ProtBot will ask again the next time it "
+            "starts.",
+            parent=self,
+        )
+
+    def _export_my_data(self) -> None:
+        """
+        Write everything ProtBot holds to a JSON file the user chooses.
+
+        Deliberately a save dialog rather than a fixed path: the point of the
+        export is that the file is theirs, and dropping it somewhere of our
+        choosing and telling them where afterwards is the wrong shape for
+        "here is your data".
+        """
+        from tkinter import filedialog
+
+        from core import dataexport
+
+        suggested = dataexport.default_export_path()
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Export my data",
+            defaultextension=".json",
+            initialfile=os.path.basename(suggested),
+            initialdir=os.path.dirname(suggested),
+            filetypes=[("JSON file", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+
+        try:
+            dataexport.write_export(self.db, self.config, path)
+        except Exception as exc:
+            messagebox.showerror("Export failed", str(exc), parent=self)
+            return
+
+        messagebox.showinfo(
+            "Export complete",
+            f"Your data was written to:\n{path}\n\n"
+            "Your licence and sync credentials are deliberately left out, so "
+            "the file is safe to send on.",
+            parent=self,
+        )
 
     def _open_data_folder(self, path: str) -> None:
         try:
