@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 731 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 755 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -23,7 +23,7 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 846 tests below are only as good as the last time someone ran them by hand. |
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 870 tests below are only as good as the last time someone ran them by hand. |
 | 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
 | 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
 | 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
@@ -54,23 +54,18 @@ one, so the stock-camera path is complete. What is missing is scanning from
 *inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
 machine with no Android SDK.
 
-### 3. Finish the accessibility work (AUDIT ST-06 remainder)
-DPI awareness and font sizes are done. Still missing: keyboard navigation,
-screen-reader labelling, a high-contrast mode. The EU Accessibility Act has
-applied to consumer software since June 2025.
-
-### 4. Build the Android app for real
+### 3. Build the Android app for real
 The shared rules compile and pass 115 tests. `android/app/` has never been
 compiled, because this machine has no Android SDK. Until someone runs
 `gradle :app:assembleDebug`, the Android half is source code rather than
 software.
 
-### 5. Write the Android screens
+### 4. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
 and tested.
 
-### 6. The remaining roadmap features
+### 5. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -119,6 +114,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **DPI awareness** | The UI is no longer bitmap-stretched on any display above 100% scaling. |
 | **Crash handling** | Unhandled exceptions on the main thread, background threads and Tk callbacks all reach the log. A frozen build has no console, so a dead monitor thread used to mean limits silently stopped being enforced while the window looked fine. |
 | **A ctypes tray icon** | Replaced pystray, which dropped the LGPL-3.0 §4 obligations that are awkward to satisfy in a frozen build. |
+| **Keyboard navigation and a high-contrast option (AUDIT ST-06, partial)** | Every modal dialog (6 of them, across 4 files) now closes on Escape — before this, a keyboard-only user's only way out of most was Alt-F4. A high-contrast palette (Settings → Display) recolours the shared ttk chrome — tabs, buttons, entries, the treeview, scrollbars — checked against WCAG AA by computing the real contrast ratios, not eyeballing hex. **Does not** cover the hand-drawn panels each tab builds for itself with its own hardcoded colours; recolouring those means touching hundreds of individual widget calls in code with no display to check the result on. Screen-reader labelling is unchanged: dialogs were already titled and controls already carry real text, and Tk's own accessibility API on Windows is too thin to build much on top of. |
 
 ### Cross-device
 
@@ -150,7 +146,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **846 tests** | 731 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
+| **870 tests** | 755 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
 | **A software bill of materials, for the EU Cyber Resilience Act** | CI generates a CycloneDX 1.6 SBOM from `requirements.lock` with `cyclonedx-py`, validates it against the schema, and publishes it as a build artifact on every push. Regulation (EU) 2024/2847 requires one for products with digital elements sold in the EU; vulnerability-reporting obligations begin 11 September 2026, full application 11 December 2027. |

@@ -344,6 +344,7 @@ class ProcessesPage(ttk.Frame):
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
 
         tk.Label(dialog, text=f"Usage limits for: {app['name']}",
                  bg=BG, fg=TEXT, font=('Segoe UI', 11, 'bold')).pack(padx=16, pady=(14, 8), anchor='w')

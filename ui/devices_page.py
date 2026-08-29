@@ -545,6 +545,7 @@ class DevicesPage(ttk.Frame):
         popup.configure(bg=BG)
         popup.transient(self)
         popup.resizable(False, False)
+        popup.bind('<Escape>', lambda e: popup.destroy())
         self._key_popup = popup
 
         tk.Label(popup, text="Scan this with ProtBot on your phone",
@@ -651,6 +652,7 @@ class DevicesPage(ttk.Frame):
         dialog.transient(self)
         dialog.resizable(False, False)
         dialog.grab_set()
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
 
         tk.Label(dialog, text="Enter the 8-character code from the other device:",
                  bg=BG, fg=TEXT2, font=('Segoe UI', 9),

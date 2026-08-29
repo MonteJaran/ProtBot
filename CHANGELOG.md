@@ -75,6 +75,11 @@ any of it. The first entry under a real version number will be written when
   named after its vendor without a brand list. The Files tab's app-edit
   dialog now has a "Sync Name" field for exactly that case: type the same
   word for one app on both devices and it overrides the automatic key.
+- **Keyboard navigation and a high-contrast option (AUDIT ST-06, partial).**
+  Every modal dialog now closes on Escape. Settings → Display adds a
+  high-contrast palette for the app's shared tabs, buttons, entries, the
+  treeview and scrollbars, checked against WCAG AA contrast. It does not yet
+  reach the hand-drawn colours inside each tab.
 
 ### Changed
 

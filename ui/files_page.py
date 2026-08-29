@@ -186,6 +186,7 @@ class FilesPage(ttk.Frame):
         dialog.configure(bg=BG)
         dialog.transient(self)
         dialog.grab_set()
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
 
         # ── Filter bar ───────────────────────────────────────────────────────
         filter_frame = ttk.Frame(dialog, style='TFrame')
@@ -438,6 +439,7 @@ class FilesPage(ttk.Frame):
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
 
         def _lbl(parent, text: str, row: int) -> None:
             tk.Label(parent, text=text, bg=BG, fg=TEXT2,
