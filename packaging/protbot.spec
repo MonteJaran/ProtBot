@@ -14,13 +14,15 @@ One-FOLDER, not one-file, deliberately:
     stub leaves its payload unsigned.
   * Inno Setup wraps the folder into a single installer anyway, so the user
     still downloads exactly one file.
+
+`core.version` imports directly below because `protbot` is an installable
+package (AUDIT ST-04) -- the build venv has it via `pip install -e .`
+(see BUILD.md), so `core` is on sys.path without this file adding it by hand.
 """
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(SPECPATH).parent))
-from core.version import APP_NAME, __version__      # noqa: E402
+from core.version import APP_NAME, __version__
 
 ROOT = Path(SPECPATH).parent
 ICON = ROOT / "ProtBot.ico"

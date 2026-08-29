@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "protbot"
 version = "1.0.0"   # keep in sync with core/version.py (a test enforces this)
@@ -8,8 +12,11 @@ requires-python = ">=3.10"
 # absence as permission. See LICENSE.
 license = "LicenseRef-Proprietary"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+# No "License ::" trove classifier: newer setuptools rejects one alongside the
+# PEP 639 `license` expression above as redundant/conflicting (caught only by
+# actually building the package -- see AUDIT ST-04, which this pyproject.toml
+# had never done before).
 classifiers = [
-    "License :: Other/Proprietary License",
     "Environment :: Win32 (MS Windows)",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
@@ -19,6 +26,12 @@ dependencies = [
     "psutil>=5.9.0",
     "plyer>=2.1.0",
 ]
+
+# `pip install -e .` puts `protbot` on PATH and makes `core`/`ui` importable
+# from any working directory -- see main.py, which used to sys.path.insert
+# its own directory to get the same effect (AUDIT ST-04).
+[project.scripts]
+protbot = "main:main"
 
 [project.optional-dependencies]
 dev = [
@@ -32,6 +45,15 @@ dev = [
     "opencv-python-headless>=4.9",
     "numpy>=1.24",
 ]
+
+[tool.setuptools]
+# Explicit, not autodiscovery: the repo root also holds tests/, android/,
+# packaging/ and server/ (a separate deployable, not part of the desktop
+# app), none of which belong in the installed package.
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "ui*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

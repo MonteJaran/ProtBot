@@ -23,6 +23,9 @@ build/
 dist/
 # Generated from core/version.py by packaging/make_version_info.py
 packaging/version_info.txt
+# `pip install -e .` metadata (AUDIT ST-04)
+*.egg-info/
+.eggs/
 
 # Test & tooling caches
 .pytest_cache/

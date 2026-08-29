@@ -110,6 +110,10 @@ object SyncClientFactory {
                         context.packageManager
                             .getPackageInfo(context.packageName, 0).versionName
                     }.getOrNull() ?: "0"),
+                // Read before SyncClient exists to ask (AUDIT SF-09): the
+                // token has to be on the Transport at construction time, not
+                // patched in after.
+                token = SyncClient.storedToken(context),
             ),
             repository = repository,
         )

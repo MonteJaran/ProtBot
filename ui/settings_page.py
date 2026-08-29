@@ -80,6 +80,8 @@ class SettingsPage(ttk.Frame):
         self._separator(inner)
         self._build_startup_section(inner)
         self._separator(inner)
+        self._build_display_section(inner)
+        self._separator(inner)
         self._build_data_section(inner)
         self._separator(inner)
         self._build_about_section(inner)
@@ -393,6 +395,32 @@ class SettingsPage(ttk.Frame):
                                  f"Could not remove from startup:\n{exc}",
                                  parent=self)
 
+    # ── Section: Display ─────────────────────────────────────────────────────
+
+    def _build_display_section(self, parent) -> None:
+        self._section_header(parent, "Display")
+
+        self._high_contrast_var = tk.BooleanVar(
+            value=bool(self.config.get("high_contrast", False)))
+        ttk.Checkbutton(
+            parent,
+            text="High-contrast colours",
+            variable=self._high_contrast_var,
+            command=lambda: self.config.set(
+                "high_contrast", self._high_contrast_var.get()),
+        ).pack(anchor='w', padx=32, pady=(0, 4))
+        # Honest about scope (AUDIT ST-06): the ttk.Style() call this feeds
+        # covers the shared chrome -- tabs, buttons, entries, the treeview,
+        # scrollbars -- not the hand-drawn panel behind each tab, and it is
+        # read once at startup, not re-applied live.
+        tk.Label(
+            parent,
+            text="Recolours tabs, buttons, inputs and the app's other shared "
+                 "controls to meet WCAG AA contrast. Takes effect the next "
+                 "time ProtBot starts.",
+            bg=BG, fg=TEXT2, font=('Segoe UI', 9), wraplength=460, justify='left',
+        ).pack(anchor='w', padx=32, pady=(0, 8))
+
     # ── Section: Data Management ──────────────────────────────────────────────
 
     def _build_data_section(self, parent) -> None:
@@ -594,6 +622,9 @@ class SettingsPage(ttk.Frame):
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
+        # Escape must cancel, never confirm -- this dialog exists specifically
+        # to require deliberate action before deleting anything.
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
 
         tk.Label(dialog,
                  text="This permanently deletes your usage history, your tracked\n"

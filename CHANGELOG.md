@@ -35,9 +35,12 @@ any of it. The first entry under a real version number will be written when
   same test cases. Off until a device is registered. The server it talks to
   does not exist yet.
 - **An Android app** (`android/`). A second application sharing the desktop's
-  rules — focus hours, limit semantics, usage accounting, the protected list.
-  The shared module compiles and passes its tests; the Android layer has never
-  been built, because it needs an SDK.
+  rules — focus hours, limit semantics, usage accounting, the protected list,
+  and now Insights' today/this-week aggregation. The shared module compiles
+  and passes its tests; the Android layer — including an in-app QR scanner
+  (CameraX + ML Kit), the app picker, limit-edit and insights screens, and a
+  device-sync screen to register or unregister this phone by name — added
+  since, has never been built, because it needs an SDK.
 - **Scheduled focus hours.** A recurring window that tightens existing limits,
   including windows that cross midnight.
 - **Data retention.** History older than the configured window is dropped on
@@ -66,6 +69,20 @@ any of it. The first entry under a real version number will be written when
   Windows, with lint, a byte-compile pass over the Tk modules, a packaging
   config check, `pip-audit` against the pinned lockfile, and the Android rule
   tests.
+- **A software bill of materials.** CI generates a CycloneDX SBOM from
+  `requirements.lock` and publishes it as a build artifact on every push —
+  Regulation (EU) 2024/2847 requires one for products with digital elements
+  sold in the EU.
+- **Linking apps across devices by hand.** The automatic join
+  (`syncproto.canonical_app_key`) is best-effort and cannot resolve a package
+  named after its vendor without a brand list. The Files tab's app-edit
+  dialog now has a "Sync Name" field for exactly that case: type the same
+  word for one app on both devices and it overrides the automatic key.
+- **Keyboard navigation and a high-contrast option (AUDIT ST-06, partial).**
+  Every modal dialog now closes on Escape. Settings → Display adds a
+  high-contrast palette for the app's shared tabs, buttons, entries, the
+  treeview and scrollbars, checked against WCAG AA contrast. It does not yet
+  reach the hand-drawn colours inside each tab.
 
 ### Changed
 
@@ -80,8 +97,18 @@ any of it. The first entry under a real version number will be written when
   satisfy in a frozen build.
 - **Dependencies are pinned by exact version and SHA-256 hash**
   (`requirements.lock`).
+- **ProtBot is now an installable package.** `main.py` no longer hand-rolls
+  `sys.path.insert`; `pyproject.toml` declares a build backend and a
+  `protbot` console-script entry point instead. `build.ps1` installs it
+  (editable) before PyInstaller runs, so `protbot.spec` imports
+  `core.version` directly rather than patching `sys.path` itself.
 
 ### Fixed
+
+- **The package could not actually be built.** `pyproject.toml` carried both
+  a PEP 639 `license` expression and a "License ::" trove classifier, which
+  current setuptools refuses as conflicting — invisible until something
+  actually ran `pip install -e .`, which nothing had.
 
 - **Usage accrued while the machine was asleep.** Closing the lid overnight
   with a browser open booked eight hours of "usage" and closed it on resume.
@@ -100,3 +127,28 @@ any of it. The first entry under a real version number will be written when
   with a test that fails the build if one returns.
 - **The plan comparison advertised features that did not exist.** Removed, with
   a test that fails if an unimplemented feature is listed as included.
+
+### Security
+
+- **The sync API had no authentication (AUDIT SF-09).** A device ID alone was
+  the credential, and one code path put it straight in a URL, where it lands
+  in server, proxy and log lines. Registration now also returns a bearer
+  token that every later request sends as `Authorization: Bearer`. Fixing
+  this surfaced two more copies of the same problem: `ui/devices_page.py` and
+  `ui/processes_page.py` each carried their own unauthenticated request code
+  — a leftover from before `core/syncclient.py` existed — instead of using
+  it. Both now do. The server-side check waits on the server existing at all;
+  the client sends the header regardless. The Android client
+  (`sync/SyncClient.kt`, `sync/Transport.kt`) gained the same token and a new
+  `joinLink`, for parity — unverified along with the rest of `:app`; see
+  STATUS.md.
+- **The SF-09 fix above was undoing itself in the most common case.**
+  `SyncClient` is built once at startup and its background thread reuses
+  that same instance for the rest of the session; its transport's token was
+  fixed at that moment. Registering a device from the Devices tab while the
+  app is already running — the only way anyone registers — wrote a fresh
+  token to config that this client's requests never picked up, silently
+  going unauthenticated until the next restart. The transport is rebuilt
+  from current config on every use now. The Android scanner had the same
+  bug in miniature: joining right after an in-flow auto-registration reused
+  a client whose transport predated the token it had just been issued.

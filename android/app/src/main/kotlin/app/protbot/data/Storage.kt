@@ -58,6 +58,12 @@ interface ProtBotDao {
     @Query("SELECT * FROM daily_usage WHERE packageName = :pkg AND date >= :since ORDER BY date")
     fun history(pkg: String, since: String): Flow<List<DailyUsage>>
 
+    /** Every app's usage since a date, one query rather than one per tracked
+     *  app -- what the Insights screen groups by date to feed
+     *  app.protbot.core.Insights.summarize(). */
+    @Query("SELECT * FROM daily_usage WHERE date >= :since")
+    suspend fun usageSince(since: String): List<DailyUsage>
+
     /** Retention. Mirrors the desktop app's pruning, default one year. */
     @Query("DELETE FROM daily_usage WHERE date < :cutoff")
     suspend fun pruneBefore(cutoff: String): Int

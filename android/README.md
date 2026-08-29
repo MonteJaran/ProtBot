@@ -170,12 +170,22 @@ opening straight away; it still works, it is one tap worse.
 
 ## Still to build
 
-- The scanning screen itself. The manifest opens the app from a scanned link
-  and `Linking.parsePayload` reads it, but there is no in-app camera scanner
-  yet — that needs CameraX and ML Kit, and cannot be verified here.
-- App picker (the `<queries>` block is declared; the UI is not written)
-- Limit editing and the insights screen
-- Manually linking an app on one device to the same app on the other, for the
-  packages named after a vendor rather than the product — the canonical key is
-  a good guess, not a guarantee
-- The first actual build, on a machine with the SDK
+- **Written, not verified: the in-app scanner, the app picker, limit
+  editing, the insights screen, and device-sync management.** All five now
+  exist (`ui/ScanScreen.kt`, `ui/AppPickerScreen.kt`, `ui/LimitEditScreen.kt`,
+  `ui/InsightsScreen.kt`, `ui/DeviceSyncScreen.kt`), wired into
+  `MainActivity.kt`, but `:app` has never compiled — no Android SDK here,
+  and `settings.gradle.kts` excludes the module entirely without one. The
+  scanner needed two new dependencies (CameraX, ML Kit's on-device barcode
+  reader) that have never resolved a dependency graph, let alone run.
+  `DeviceSyncScreen.kt` is the first thing on Android to ever call
+  `SyncClient.register`/`unregister`. Each screen's arithmetic lives in
+  `:core` (`Insights.kt`) and is tested; the screens, the camera binding
+  and the permission flow are not. Check those first on a real device —
+  see STATUS.md.
+- Manually linking an app on one device to the same app on the other, for
+  packages named after a vendor rather than the product — the canonical key
+  is a good guess, not a guarantee. The desktop app has this now (the Files
+  tab's "Sync Name" field, `core/syncproto.py`'s `aliases` parameter); the
+  Android side of it does not exist yet.
+- The first actual build, on a machine with the SDK.

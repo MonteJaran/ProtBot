@@ -108,7 +108,26 @@ WARNING = '#fbbf24'
 ERROR   = '#f87171'
 
 
-def _configure_style() -> ttk.Style:
+def _configure_style(config=None) -> ttk.Style:
+    """
+    ttk.Style for the app's shared chrome -- tabs, buttons, entries, the
+    treeview, scrollbars.
+
+    `config` picks the palette (ui/theme.py): the app's normal dark theme, or
+    the high-contrast one from Settings. Local names shadow the module-level
+    BG/BG2/... constants deliberately, so this function styles from whichever
+    palette was resolved rather than always the default -- everything below
+    reads `theme` colours, not the globals of the same name.
+    """
+    from ui import theme as _theme
+
+    p = _theme.palette(config) if config is not None else _theme.DEFAULT
+    BG, BG2, BG3 = p.BG, p.BG2, p.BG3
+    TEXT, TEXT2 = p.TEXT, p.TEXT2
+    ACCENT, ON_ACCENT, ACCENT_ACTIVE = p.ACCENT, p.ON_ACCENT, p.ACCENT_ACTIVE
+    ERROR = p.ERROR
+    DANGER_BG, DANGER_BG_ACTIVE = p.DANGER_BG, p.DANGER_BG_ACTIVE
+
     style = ttk.Style()
     style.theme_use('clam')
 
@@ -138,27 +157,30 @@ def _configure_style() -> ttk.Style:
     style.map(
         'TButton',
         background=[('active', ACCENT), ('pressed', ACCENT)],
-        foreground=[('active', '#ffffff'), ('pressed', '#ffffff')],
+        # ON_ACCENT, not a fixed white: the default theme's accent is dark
+        # enough for white text, but a high-contrast accent bright enough to
+        # read against a black background is not -- see ui/theme.py.
+        foreground=[('active', ON_ACCENT), ('pressed', ON_ACCENT)],
     )
     style.configure(
         'Accent.TButton',
-        background=ACCENT, foreground='#ffffff',
+        background=ACCENT, foreground=ON_ACCENT,
         font=('Segoe UI', 10, 'bold'),
         borderwidth=0, relief='flat', padding=(10, 5),
     )
     style.map(
         'Accent.TButton',
-        background=[('active', '#c73652'), ('pressed', '#c73652')],
+        background=[('active', ACCENT_ACTIVE), ('pressed', ACCENT_ACTIVE)],
     )
     style.configure(
         'Danger.TButton',
-        background='#7f1d1d', foreground=ERROR,
+        background=DANGER_BG, foreground=ERROR,
         font=('Segoe UI', 10),
         borderwidth=0, relief='flat', padding=(10, 5),
     )
     style.map(
         'Danger.TButton',
-        background=[('active', '#991b1b'), ('pressed', '#991b1b')],
+        background=[('active', DANGER_BG_ACTIVE), ('pressed', DANGER_BG_ACTIVE)],
     )
 
     # ── Notebook ─────────────────────────────────────────────────────────────
@@ -200,6 +222,10 @@ def _configure_style() -> ttk.Style:
     style.map(
         'Treeview.Heading',
         background=[('active', ACCENT)],
+        # Same reasoning as the buttons above: TEXT is light enough to read
+        # on the default theme's darker ACCENT, but not on the high-contrast
+        # one.
+        foreground=[('active', ON_ACCENT)],
     )
 
     # ── Combobox ─────────────────────────────────────────────────────────────
@@ -392,7 +418,7 @@ class MainApp:
         self.monitor = monitor
 
         self._setup_window()
-        _configure_style()
+        _configure_style(config)
         self._build_ui()
         self._start_refresh_loop()
 

@@ -62,6 +62,11 @@ ENDPOINT_UPLOAD = "/upload"
 ENDPOINT_SYNC = "/sync"
 
 
+def _auth_header(token: str) -> dict:
+    token = str(token or "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 class Transport:
     """
     One HTTP POST, returning parsed JSON or None.
@@ -71,9 +76,15 @@ class Transport:
     wrong types — without a network or a server.
     """
 
-    def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT) -> None:
+    def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT,
+                token: str = "") -> None:
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout
+        # The device's bearer token (AUDIT SF-09) -- see RegisterResp.t in
+        # server/models.py. Optional: a Transport built before registration,
+        # or against a server that has not deployed the check yet, still
+        # works, just unauthenticated.
+        self.token = str(token or "").strip()
 
     def post(self, path: str, payload: dict):
         if not self.base_url:
@@ -97,6 +108,7 @@ class Transport:
             headers={
                 "Content-Type": "application/json",
                 "User-Agent": f"ProtBot/{__version__}",
+                **_auth_header(self.token),
             },
             method="POST",
         )
@@ -118,6 +130,47 @@ class Transport:
             return None
 
 
+def build_transport(config, timeout: int = REQUEST_TIMEOUT) -> "Transport":
+    """The one place that turns config into a Transport, token included."""
+    return Transport(config.get("server_url", ""), timeout=timeout,
+                     token=config.get("device_token", ""))
+
+
+def authed_request(config, method: str, path: str, body: dict | None = None,
+                   timeout: int = REQUEST_TIMEOUT):
+    """
+    A synchronous, authenticated request that raises on failure.
+
+    For foreground UI code (Devices tab: register, generate a link code, join
+    one, list the group) that needs to show the user *why* a request failed —
+    the opposite contract from Transport.post, which swallows everything
+    because it runs on the background sync thread and must never raise into
+    the monitor's poll loop. Both enforce https and attach the device's
+    token; this is not routed through Transport because the two error
+    contracts do not mix.
+
+    Never puts anything identifying in the URL (AUDIT SF-09) -- path is a
+    fixed string, and the caller passes ids like device_id in `body`.
+    """
+    base = str(config.get("server_url", "") or "").rstrip("/")
+    if not base:
+        raise ValueError("Server URL not configured — go to Settings.")
+    if not base.lower().startswith("https://"):
+        raise ValueError("Sync server URL must be https.")
+
+    url = base + "/" + path.lstrip("/")
+    data = json.dumps(body).encode("utf-8") if body else None
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": f"ProtBot/{__version__}",
+        **_auth_header(config.get("device_token", "")),
+    }
+
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.status, json.loads(response.read().decode("utf-8"))
+
+
 class SyncClient:
     """
     Keeps this device's totals and the group's totals in step.
@@ -129,7 +182,9 @@ class SyncClient:
     def __init__(self, db, config, transport=None) -> None:
         self.db = db
         self.config = config
-        self._transport = transport or Transport(config.get("server_url", ""))
+        # None in production; tests inject a fixed FakeTransport and expect
+        # it back unchanged (see _transport below).
+        self._injected_transport = transport
 
         self._lock = threading.RLock()
         self._thread = None
@@ -149,6 +204,28 @@ class SyncClient:
         self._uploaded_date = ""
         self._backoff = BACKOFF_START_SEC
         self._last_error = ""
+
+    @property
+    def _transport(self) -> "Transport":
+        """
+        A fresh Transport per use in production, not one fixed at
+        construction time.
+
+        This client is built once, at startup (main.py), and its background
+        thread keeps calling sync_once() on the same instance for the rest
+        of the session. If the token were captured once here, registering a
+        device from the Devices tab while the app is already running -- the
+        only way anyone registers -- would write a fresh device_token to
+        config that this client's requests never picked up, silently
+        undoing the AUDIT SF-09 fix until the next restart. build_transport
+        re-reads config on every call, so a token (or a changed server_url)
+        set after construction takes effect on the very next request.
+
+        Tests inject a fixed transport through the constructor and get
+        exactly that back, unchanged -- this only rebuilds the production
+        default.
+        """
+        return self._injected_transport or build_transport(self.config)
 
     # ── The switch ───────────────────────────────────────────────────────
 
@@ -341,7 +418,7 @@ class SyncClient:
         if not missing:
             return
 
-        payload = syncproto.build_app_sync(self.device_id, apps)
+        payload = syncproto.build_app_sync(self.device_id, apps, self._app_aliases())
         if not payload:
             return
 
@@ -359,6 +436,10 @@ class SyncClient:
 
     def _app_id_map(self) -> dict:
         raw = self.config.get("server_app_ids", {}) or {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _app_aliases(self) -> dict:
+        raw = self.config.get("app_aliases", {}) or {}
         return raw if isinstance(raw, dict) else {}
 
     def _server_id_for(self, local_app_id: int) -> int:
@@ -398,8 +479,15 @@ def register_device(config, device_name: str = "", email: str = "",
     made from the Devices tab rather than something that happens on startup.
     The email is optional and is the user's to type or leave blank; the server
     discards it after the response (server/models.py).
+
+    Also stores the bearer token the server issues alongside the id (AUDIT
+    SF-09) — every request after this one authenticates with it instead of
+    the device id travelling alone. A server that has not deployed token
+    issuance yet and omits `t` still registers the device; the token is
+    simply empty until the server does, at which point every client already
+    sends whatever it has.
     """
-    transport = transport or Transport(config.get("server_url", ""))
+    transport = transport or build_transport(config)
     payload = {"n": str(device_name or "")}
     if email:
         payload["e"] = str(email)
@@ -415,6 +503,7 @@ def register_device(config, device_name: str = "", email: str = "",
         return ""
 
     config.set("device_id", device_id)
+    config.set("device_token", str(response.get("t", "") or "").strip())
     log.info("Device registered for sync.")
     return device_id
 
@@ -425,9 +514,56 @@ def unregister_device(config) -> None:
 
     Clearing the device id alone would leave the app quiet but still holding
     the identifier that ties this machine to data on the server, and the stale
-    app-id mapping would be wrong the moment the user registered again.
+    app-id mapping would be wrong the moment the user registered again. The
+    token goes with it — it authenticates that same id and is worthless
+    (and a leftover secret) without it.
     """
     config.set("device_id", "")
+    config.set("device_token", "")
     config.set("server_app_ids", {})
     config.set("linked_devices", [])
     log.info("Device unregistered; sync is off.")
+    # app_aliases is deliberately left alone: it is the user's own record of
+    # which apps are the same product on another device, not server state.
+    # Losing it on every re-registration would make them retype it each time.
+
+
+# ── Hand-linking apps across devices ────────────────────────────────────────
+#
+# syncproto.canonical_app_key is a best-effort join and says so in its own
+# docstring: no string rule resolves a package named after its vendor rather
+# than its product without a brand list. This is the fallback -- the user
+# types the same word for one app on both devices, and that word becomes the
+# canonical key instead of the automatic guess. See STATUS.md.
+
+def app_alias(config, local_app_id: int) -> str:
+    """The hand-typed sync name for one app, or "" if none is set."""
+    raw = config.get("app_aliases", {}) or {}
+    if not isinstance(raw, dict):
+        return ""
+    return str(raw.get(str(local_app_id), "") or "")
+
+
+def set_app_alias(config, local_app_id: int, alias: str) -> None:
+    """
+    Set (or, given blank text, clear) the sync name for one app.
+
+    Also drops any server id already cached for it. An alias is set because
+    the existing match is wrong or missing; leaving the stale id in place
+    would keep using it until the app happened to become "missing" again on
+    its own, which might be never.
+    """
+    raw = config.get("app_aliases", {}) or {}
+    aliases = dict(raw) if isinstance(raw, dict) else {}
+    key = str(local_app_id)
+    text = str(alias or "").strip()
+    if text:
+        aliases[key] = text
+    else:
+        aliases.pop(key, None)
+    config.set("app_aliases", aliases)
+
+    raw_ids = config.get("server_app_ids", {}) or {}
+    mapped = dict(raw_ids) if isinstance(raw_ids, dict) else {}
+    if mapped.pop(key, None) is not None:
+        config.set("server_app_ids", mapped)

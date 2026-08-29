@@ -20,9 +20,11 @@
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-The script runs the tests and the linter first and refuses to build from a red
-tree. Then it generates the Windows version resource from `core/version.py`,
-runs PyInstaller, **launches the result and checks it stays running for eight
+The script installs `protbot` itself in editable mode (`pip install -e .
+--no-deps` — the app is a real package now, not a `sys.path.insert` hack;
+AUDIT ST-04), runs the tests and the linter first and refuses to build from a
+red tree, generates the Windows version resource from `core/version.py`, runs
+PyInstaller, **launches the result and checks it stays running for eight
 seconds**, and finally builds the installer.
 
 That smoke test matters more than it looks. A frozen build that is missing a

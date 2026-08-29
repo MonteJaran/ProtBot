@@ -6,9 +6,10 @@ import threading
 import tkinter as tk
 from tkinter import messagebox
 
-# Ensure we can import our modules regardless of working directory
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
+# `core` and `ui` are importable without a path hack because this file ships
+# as the `main` module of the installable `protbot` package (see
+# pyproject.toml's [project.scripts]) -- `pip install -e .` puts them on
+# sys.path regardless of the working directory `protbot` is launched from.
 from core import crash, licensing, logging_setup, tray, updates
 from core.config import Config
 from core.consent import has_consented, record_consent, show_consent_dialog

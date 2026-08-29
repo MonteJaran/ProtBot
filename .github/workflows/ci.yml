@@ -1,9 +1,11 @@
 name: CI
 
+# Disabled on push/PR at the owner's request: the account is billing-locked
+# (STATUS.md), the project is pre-release, and a workflow that only ever
+# fails on "account locked" is noise, not signal. workflow_dispatch is left
+# in so this can still be run by hand, and re-enabling later is restoring
+# the two triggers below, not rebuilding the file.
 on:
-  push:
-    branches: ["**"]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -97,6 +99,17 @@ jobs:
         # requirements.txt.
         run: python -c "import psutil, plyer; print('runtime deps OK')"
 
+      - name: Install protbot as a package (AUDIT ST-04)
+        # What build.ps1 does before PyInstaller runs. Proves the packaging
+        # metadata actually resolves on the shipping OS, not just that the
+        # files parse. Doesn't import main.py itself -- that pulls in tkinter,
+        # which this runner does not have (see the `test` job's note on the
+        # Tk modules the suite cannot import).
+        run: |
+          python -m pip install -e . --no-deps
+          python -c "import core, ui; print('package imports OK')"
+          python -c "from importlib.metadata import entry_points as ep; names = ep(group='console_scripts').names; assert 'protbot' in names, list(names); print('entry point OK')"
+
       - name: Verify the packaging config
         # PyInstaller and Inno Setup cannot run here, but the spec, the
         # installer script and the launcher can be checked for drift.
@@ -123,6 +136,38 @@ jobs:
         # freezes any advisory published after the pin was taken — this job is
         # what stops that going unnoticed.
         run: pip-audit --requirement requirements.lock --strict --progress-spinner off
+
+  sbom:
+    name: Software bill of materials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cyclonedx-py
+        run: python -m pip install --upgrade pip cyclonedx-bom
+
+      - name: Generate the SBOM
+        # Regulation (EU) 2024/2847 (the Cyber Resilience Act) requires one for
+        # products with digital elements sold in the EU. requirements.lock is
+        # what a release actually installs, so it is what the SBOM describes —
+        # the same reasoning as the audit job above. --validate makes
+        # cyclonedx-py check the document against the CycloneDX 1.6 schema
+        # itself; a malformed BOM fails this step rather than shipping.
+        run: |
+          python -m cyclonedx_py requirements requirements.lock \
+            --pyproject pyproject.toml \
+            --of JSON --sv 1.6 --validate \
+            -o protbot.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: protbot.cdx.json
+          retention-days: 90
 
   android-core:
     name: Android shared rules

@@ -17,7 +17,9 @@ agree: the key is the only thing joining "Discord.exe" on the PC to
 gets two half-counted apps and no error anywhere.
 """
 
+import json
 import time
+import urllib.request
 from datetime import datetime
 
 import pytest
@@ -216,6 +218,61 @@ class TestBuildUpload:
         assert payload == {}
 
 
+# ── Hand-linking apps across devices ────────────────────────────────────────
+#
+# canonical_app_key is a best-effort join and says so: no string rule
+# resolves a package named after its vendor without a brand list. The
+# fallback is the user typing the same word for one app on both devices.
+
+class TestHandLinkingApps:
+
+    def test_an_alias_overrides_the_automatic_key(self):
+        # "Firefox.exe" and "org.mozilla.firefox" do not join automatically
+        # (see TestCanonicalAppKey.test_the_join_is_best_effort_and_says_so).
+        # A shared alias makes them join anyway.
+        payload = syncproto.build_app_sync(
+            "dev123",
+            [{"id": 1, "name": "Firefox.exe", "category": "Browser"}],
+            aliases={"1": "browser-x"},
+        )
+        assert payload["a"] == [[1, "browserx", "Browser"]]
+
+    def test_the_alias_goes_through_the_same_normaliser_as_a_real_name(self):
+        # Not sent verbatim: two devices typing "Firefox" and " firefox "
+        # still have to land on one key, and there is no second rule to keep
+        # in sync with canonical_app_key if this were special-cased.
+        assert (syncproto.canonical_app_key("Firefox")
+                == syncproto.build_app_sync(
+                    "dev123", [{"id": 1, "name": "x"}], aliases={"1": "Firefox"},
+                )["a"][0][1])
+
+    def test_an_alias_for_a_different_app_does_not_leak_across(self):
+        payload = syncproto.build_app_sync(
+            "dev123",
+            [
+                {"id": 1, "name": "Discord.exe", "category": "Social"},
+                {"id": 2, "name": "Slack.exe", "category": "Social"},
+            ],
+            aliases={"1": "chatter-x"},
+        )
+        assert payload["a"] == [[1, "chatterx", "Social"], [2, "slack", "Social"]]
+
+    def test_an_unusable_alias_falls_back_to_the_automatic_key(self):
+        # Garbage in the alias field must drop the override, not the app.
+        payload = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Discord.exe", "category": "Social"}],
+            aliases={"1": "!!!"},
+        )
+        assert payload["a"] == [[1, "discord", "Social"]]
+
+    def test_no_aliases_behaves_exactly_as_before(self):
+        without = syncproto.build_app_sync("dev123", [{"id": 1, "name": "Discord.exe"}])
+        with_empty = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Discord.exe"}], aliases={},
+        )
+        assert without == with_empty
+
+
 # ── Hostile responses ─────────────────────────────────────────────────────
 
 class TestParsing:
@@ -318,9 +375,11 @@ class TestSyncIsOffUntilTheUserTurnsItOn:
         assert transport.requests == []
 
     def test_unregistering_forgets_the_mapping_too(self, config, synced):
+        config.set("device_token", "tok-abc")
         syncclient.unregister_device(config)
         assert config.get("device_id") == ""
         assert config.get("server_app_ids") == {}
+        assert config.get("device_token") == ""
 
 
 class TestOneSyncCycle:
@@ -481,6 +540,58 @@ class TestRegistration:
         assert config.get("device_id") == ""
 
 
+class TestAppAliasHelpers:
+    """
+    core.syncclient.app_alias / set_app_alias: the storage half of hand-
+    linking apps across devices (STATUS.md). The dialog is
+    ui/files_page.py's "Sync Name" field; this is what it calls.
+    """
+
+    def test_setting_and_reading_an_alias(self, config):
+        syncclient.set_app_alias(config, 5, "shared-name")
+        assert syncclient.app_alias(config, 5) == "shared-name"
+
+    def test_blank_text_clears_the_alias(self, config):
+        syncclient.set_app_alias(config, 5, "shared-name")
+        syncclient.set_app_alias(config, 5, "   ")
+        assert syncclient.app_alias(config, 5) == ""
+
+    def test_reading_an_unset_alias_is_empty(self, config):
+        assert syncclient.app_alias(config, 999) == ""
+
+    def test_setting_an_alias_drops_the_cached_server_id(self, config):
+        # The point of the whole feature: a stale match must not survive a
+        # corrected alias, or the correction never takes effect.
+        config.set("server_app_ids", {"5": 42})
+        syncclient.set_app_alias(config, 5, "shared-name")
+        assert "5" not in config.get("server_app_ids")
+
+    def test_setting_an_alias_does_not_touch_other_apps_mappings(self, config):
+        config.set("server_app_ids", {"7": 99})
+        syncclient.set_app_alias(config, 5, "shared-name")
+        assert config.get("server_app_ids") == {"7": 99}
+
+
+class TestSyncClientSendsAliases:
+
+    def test_an_alias_is_sent_for_an_unmapped_app(self, db, config):
+        from core import consent
+
+        consent.record_consent(config, True)
+        config.set("device_id", "device-abc")
+        app_id = db.add_tracked_app("Firefox", "firefox.exe", "", "", "Browser")
+        syncclient.set_app_alias(config, app_id, "browser-x")
+
+        transport = FakeTransport({
+            syncclient.ENDPOINT_APPS: {"m": {}},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+
+        assert transport.payload_for(syncclient.ENDPOINT_APPS)["a"] == \
+            [[app_id, "browserx", "Browser"]]
+
+
 class TestNothingUndisclosedLeavesTheMachine:
     """
     A build-enforced check on PRIVACY.md.
@@ -619,3 +730,243 @@ class TestTheLimitCheckCountsBothDevices:
 
         both = self._monitor(db, config, remote_sec=25 * 60)
         assert both._usage_today_sec(synced) >= 3600
+
+
+# ── Authentication (AUDIT SF-09) ────────────────────────────────────────────
+#
+# A device id alone is not a credential: it travels in request bodies (and,
+# before this fix, in one URL path) and lands in server, proxy and log lines.
+# Every request after registration must carry the bearer token the server
+# issues alongside the id.
+
+class _FakeHTTPResponse:
+    """Stands in for the object urlopen()'s context manager yields."""
+
+    def __init__(self, status=200, body=b'{"ok": 1}'):
+        self.status = status
+        self._body = body
+
+    def read(self, *_args, **_kwargs):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc_info):
+        return False
+
+
+class TestAuthentication:
+
+    def test_transport_sends_the_token_as_a_bearer_header(self, monkeypatch):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return _FakeHTTPResponse()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+        result = syncclient.Transport("https://example.com", token="secret-token") \
+            .post("/upload", {"d": "x"})
+
+        assert result == {"ok": 1}
+        assert captured["request"].get_header("Authorization") == "Bearer secret-token"
+
+    def test_transport_sends_no_authorization_header_without_a_token(self, monkeypatch):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return _FakeHTTPResponse()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+        # Backward compatible: a device that has never registered, or a
+        # server that has not deployed token issuance yet, still works.
+        syncclient.Transport("https://example.com").post("/upload", {"d": "x"})
+        assert captured["request"].get_header("Authorization") is None
+
+    def test_build_transport_reads_the_server_url_and_token_from_config(self, config):
+        config.set("server_url", "https://sync.protbot.app")
+        config.set("device_token", "tok-123")
+
+        transport = syncclient.build_transport(config)
+
+        assert transport.base_url == "https://sync.protbot.app"
+        assert transport.token == "tok-123"
+
+    def test_registering_stores_the_token_the_server_gave(self, config):
+        transport = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "t": "tok-abc"},
+        })
+        syncclient.register_device(config, "my-pc", transport=transport)
+        assert config.get("device_token") == "tok-abc"
+
+    def test_a_server_with_no_token_issuance_yet_still_registers(self, config):
+        # Today's real behaviour: there is no server, so no response ever
+        # carries "t". Registration must not fail because of that.
+        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        assert syncclient.register_device(config, "my-pc", transport=transport) == "abc123"
+        assert config.get("device_token") == ""
+
+    def test_sync_client_uses_the_stored_token_by_default(self, db, config, synced):
+        config.set("device_token", "tok-xyz")
+        client = SyncClient(db, config)
+        assert client._transport.token == "tok-xyz"
+
+    def test_a_token_set_after_construction_is_picked_up_without_a_restart(
+            self, db, config, synced):
+        # The bug this guards: main.py builds one SyncClient at startup and
+        # its background thread keeps calling sync_once() on that same
+        # instance for the rest of the session. Registering a device from
+        # the Devices tab -- the only way anyone registers -- happens after
+        # that, while the app keeps running. If the token were captured once
+        # at construction, every request for the rest of the session would
+        # go out unauthenticated despite AUDIT SF-09, silently, until the
+        # user happened to restart the app.
+        client = SyncClient(db, config)
+        assert client._transport.token == ""
+
+        config.set("device_token", "tok-set-later")
+        assert client._transport.token == "tok-set-later"
+
+    def test_an_injected_transport_is_never_replaced(self, db, config, synced):
+        # Tests (and anything else that constructs one explicitly) must get
+        # back exactly the transport they passed in, not a rebuilt one --
+        # this is what makes FakeTransport-based tests possible at all.
+        transport = FakeTransport()
+        client = SyncClient(db, config, transport=transport)
+        config.set("device_token", "tok-xyz")
+        assert client._transport is transport
+
+    def test_authed_request_attaches_the_token(self, monkeypatch, config):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return _FakeHTTPResponse(body=b'{"devices": []}')
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+        config.set("server_url", "https://sync.protbot.app")
+        config.set("device_token", "tok-xyz")
+        status, data = syncclient.authed_request(config, "POST", "/group", {"d": "dev-1"})
+
+        assert status == 200
+        assert data == {"devices": []}
+        assert captured["request"].get_header("Authorization") == "Bearer tok-xyz"
+        # The device id travelled in the body, never string-interpolated
+        # into the URL -- the point of this whole finding.
+        assert "dev-1" not in captured["request"].full_url
+
+    def test_authed_request_sends_the_body_as_json(self, monkeypatch, config):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return _FakeHTTPResponse(body=b"{}")
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        config.set("server_url", "https://sync.protbot.app")
+
+        syncclient.authed_request(config, "POST", "/group", {"d": "dev-1"})
+        assert json.loads(captured["request"].data) == {"d": "dev-1"}
+
+    def test_authed_request_refuses_plain_http(self, config):
+        config.set("server_url", "http://example.com")
+        with pytest.raises(ValueError):
+            syncclient.authed_request(config, "POST", "/group", {"d": "dev-1"})
+
+    def test_authed_request_requires_a_server_url(self, config):
+        config.set("server_url", "")
+        with pytest.raises(ValueError):
+            syncclient.authed_request(config, "GET", "/group")
+
+
+# ── The device id must never travel in a URL (AUDIT SF-09) ─────────────────
+#
+# The audit's literal citations: `ui/processes_page.py` and
+# `ui/devices_page.py` each hand-rolled their own request instead of going
+# through Transport/authed_request, and one of them string-interpolated the
+# device id straight into the URL path. Read as text, like the rest of this
+# suite's checks on the UI modules it cannot import (no display in CI).
+
+class TestDeviceIdNeverTravelsInAUrl:
+
+    @staticmethod
+    def _ui_source(name: str) -> str:
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        with open(os.path.join(REPO_ROOT, "ui", name), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_processes_page_has_no_hand_rolled_request(self):
+        text = self._ui_source("processes_page.py")
+        assert "urllib.request" not in text
+        assert "/sync/{device_id}" not in text
+        assert "from core import syncclient" in text
+
+    def test_devices_page_api_helper_delegates_to_syncclient(self):
+        text = self._ui_source("devices_page.py")
+        assert "urlopen" not in text
+        assert "syncclient.authed_request" in text
+        assert "/group/{dev_id}" not in text
+        assert '"/r"' not in text, \
+            "the register endpoint must match syncclient.ENDPOINT_REGISTER"
+
+
+class TestTheHandLinkDialog:
+    """
+    ui/files_page.py's "Sync Name" field on the app-edit dialog. Read as
+    text, like the rest of this section -- Tk has no display in CI.
+    """
+
+    def test_the_edit_dialog_reads_and_writes_the_alias(self):
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        with open(os.path.join(REPO_ROOT, "ui", "files_page.py"), encoding="utf-8") as fh:
+            text = fh.read()
+        assert "from core.syncclient import app_alias, set_app_alias" in text
+        assert "set_app_alias(self.config, app_id, e_alias.get())" in text
+
+
+# ── The wire contract records the fix (AUDIT SF-09) ─────────────────────────
+#
+# server/models.py is the spec a real server is built against (#8/#9 in
+# STATUS.md); it cannot be imported here without pydantic, which is a known,
+# accepted gap (AUDIT ST-05) -- read as text like the rest of this section.
+
+class TestTheWireContractRequiresTheToken:
+
+    @staticmethod
+    def _models_source() -> str:
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        with open(os.path.join(REPO_ROOT, "server", "models.py"), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_register_resp_carries_a_token(self):
+        import re
+
+        match = re.search(r"class RegisterResp\(BaseModel\):(.*?)\n\n",
+                          self._models_source(), re.DOTALL)
+        assert match, "RegisterResp not found in server/models.py"
+        assert re.search(r"^\s*t:\s*str", match.group(1), re.MULTILINE), (
+            "RegisterResp must carry the bearer token every later request "
+            "authenticates with"
+        )
+
+    def test_the_group_endpoint_is_specified(self):
+        # ui/devices_page.py's "list linked devices" call had no model at
+        # all before this fix -- undocumented and, worse, a GET with the
+        # device id in the URL.
+        text = self._models_source()
+        assert "class GroupReq" in text
+        assert "class GroupResp" in text

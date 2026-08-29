@@ -68,5 +68,15 @@ dependencies {
     // version that moves under us would break them without touching this file.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // The in-app QR scanner (ui/ScanScreen.kt): CameraX for the feed, ML
+    // Kit's on-device barcode reader to decode it. Neither has run here --
+    // no Android SDK on this machine to build :app at all, see STATUS.md.
+    val cameraX = "1.4.1"
+    implementation("androidx.camera:camera-core:$cameraX")
+    implementation("androidx.camera:camera-camera2:$cameraX")
+    implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation("androidx.camera:camera-view:$cameraX")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
     testImplementation(kotlin("test"))
 }

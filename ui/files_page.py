@@ -9,6 +9,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from core.apps_list import DEFAULT_APPS, APP_CATEGORIES, find_app_path, find_main_exe_in_folder
 from core.protected import is_protected, protection_reason
+from core.syncclient import app_alias, set_app_alias
 
 # ── Color Scheme (mirrors app.py) ────────────────────────────────────────────
 BG      = '#1a1a2e'
@@ -185,6 +186,7 @@ class FilesPage(ttk.Frame):
         dialog.configure(bg=BG)
         dialog.transient(self)
         dialog.grab_set()
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
 
         # ── Filter bar ───────────────────────────────────────────────────────
         filter_frame = ttk.Frame(dialog, style='TFrame')
@@ -429,11 +431,15 @@ class FilesPage(ttk.Frame):
 
         dialog = tk.Toplevel(self)
         dialog.title(f"Edit — {app['name']}")
-        dialog.geometry("520x520")
+        # Tall enough for the sync-name section added below the category
+        # picker; resizable is off, so this has to be right rather than
+        # merely usually right.
+        dialog.geometry("520x640")
         dialog.configure(bg=BG)
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
+        dialog.bind('<Escape>', lambda e: dialog.destroy())
 
         def _lbl(parent, text: str, row: int) -> None:
             tk.Label(parent, text=text, bg=BG, fg=TEXT2,
@@ -566,6 +572,26 @@ class FilesPage(ttk.Frame):
             btn.pack(side='left', padx=(0, 4), pady=1)
             _btn_refs[value] = btn
 
+        # ── Cross-device sync name ──────────────────────────────────────────────
+        sync_sep = tk.Frame(dialog, bg='#0f3460', height=1)
+        sync_sep.pack(fill='x', padx=16, pady=(14, 0))
+
+        tk.Label(dialog, text="Sync Name (optional)", bg=BG, fg='#9090a0',
+                 font=('Segoe UI', 9, 'bold')).pack(anchor='w', padx=16, pady=(8, 2))
+        tk.Label(
+            dialog,
+            text="Cross-device sync normally matches this app to its counterpart "
+                 "on your other devices by name. If it isn't matching — often "
+                 "because a phone app is named after its vendor, like Firefox vs. "
+                 "org.mozilla.firefox — type the same word here and for the app "
+                 "on the other device to link them by hand.",
+            bg=BG, fg='#9090a0', font=('Segoe UI', 9), wraplength=480, justify='left',
+        ).pack(anchor='w', padx=16)
+
+        e_alias = ttk.Entry(dialog, width=38)
+        e_alias.insert(0, app_alias(self.config, app_id))
+        e_alias.pack(anchor='w', padx=16, pady=(6, 0))
+
         # ── Buttons ───────────────────────────────────────────────────────────
         tk.Frame(dialog, bg='#0f3460', height=1).pack(fill='x', padx=16, pady=(14, 0))
 
@@ -588,6 +614,7 @@ class FilesPage(ttk.Frame):
                 category=_selected_cat[0],
             )
             self.db.set_app_limits(app_id, daily_var.get(), weekly_var.get())
+            set_app_alias(self.config, app_id, e_alias.get())
             dialog.destroy()
             self.refresh()
 
