@@ -56,7 +56,7 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.3.1")
     implementation("androidx.compose.ui:ui-tooling-preview:$compose")
 
-    val room = "2.6.1"
+    val room = "2.8.4"
     implementation("androidx.room:room-runtime:$room")
     implementation("androidx.room:room-ktx:$room")
     ksp("androidx.room:room-compiler:$room")
