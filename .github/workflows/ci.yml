@@ -47,9 +47,13 @@ jobs:
           cache: pip
 
       - name: Install test dependencies
+        # segno and OpenCV verify core/qrcode.py: the tests read generated
+        # symbols back with a real decoder and compare against a second
+        # encoder. Without them those tests skip, which would let a broken
+        # QR encoder through a green build.
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest
+          python -m pip install pytest segno opencv-python-headless numpy
 
       - name: Run tests
         run: python -m pytest -v

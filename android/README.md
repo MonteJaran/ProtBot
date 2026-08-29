@@ -9,7 +9,7 @@ is tested against the same cases.
 
 | Module | State |
 |---|---|
-| `core/` | **Compiles and passes 93 tests.** Pure Kotlin/JVM, no Android imports, no SDK needed. |
+| `core/` | **Compiles and passes 115 tests.** Pure Kotlin/JVM, no Android imports, no SDK needed. |
 | `app/` | **Written, never built.** Needs the Android SDK, which this machine does not have. |
 
 Run the verified part anywhere with a JDK:
@@ -148,8 +148,31 @@ format and documents what a server has to do with it; the client is tested
 against a fake transport, so what is verified is how it behaves on every
 response shape a broken server could produce.
 
+## Linking to a PC
+
+The PC shows a QR code and this app reads it. `core/Linking.kt` is the shared
+half — the payload format, the key alphabet, the expiry — and its Python twin
+is `core/linking.py`; the two are held to the same cases, because the PC writes
+the payload and the phone parses it with nothing in between to absorb a
+disagreement.
+
+    https://protbot.app/l#1.ABCD2345
+
+An https App Link rather than a `protbot://` scheme, because a custom scheme
+shows up in the stock camera as "no app can open this" exactly when ProtBot is
+not installed yet. The key sits in the fragment, which Android hands to the app
+but no browser ever sends to a server — so opening the link without the app
+installed does not leak the key into a web access log.
+
+`autoVerify="true"` on the intent filter needs `assetlinks.json` served from
+protbot.app. Until that is published Android shows a chooser rather than
+opening straight away; it still works, it is one tap worse.
+
 ## Still to build
 
+- The scanning screen itself. The manifest opens the app from a scanned link
+  and `Linking.parsePayload` reads it, but there is no in-app camera scanner
+  yet — that needs CameraX and ML Kit, and cannot be verified here.
 - App picker (the `<queries>` block is declared; the UI is not written)
 - Limit editing and the insights screen
 - Manually linking an app on one device to the same app on the other, for the

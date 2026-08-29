@@ -3,7 +3,7 @@
 Current state and remaining work. `AUDIT.md` is the historical record of what
 was found and fixed; this is the forward-looking list.
 
-**Where things stand:** 504 Python tests green on 3.10 and 3.12, plus 93
+**Where things stand:** 693 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules; lint clean. Every safety-critical
 and legal finding from the audit is closed or has its remaining part named
 below. What is left splits cleanly into *things only you can do* and *things
@@ -27,7 +27,7 @@ These are the real gates. No amount of coding moves them.
 | 2 | **Microsoft Store developer account** | ~$19 one-time, possibly free now | Microsoft signs Store packages, so **SmartScreen stops warning** — same result as a €300/yr certificate. Also gives you a distribution channel and a payment system. Cheapest unlock on this list by a wide margin. |
 | 3 | **Merchant of record** (Paddle or Lemon Squeezy) | ~5% of revenue | The client licensing gate is built. Without this there is nothing to sell keys with. Both handle EU VAT for you. |
 | 4 | **A `/license/verify` endpoint** | A morning's work on the server | The client calls it and handles every failure mode. It does not exist. |
-| 4b | **The sync server** — `/register`, `/apps`, `/upload`, `/sync` | A day, on top of item 6 | Both clients are written and tested; there is nothing between them. `server/models.py` defines the wire format and spells out the three things a server must get right (cumulative totals, the client's date, matching on the canonical key). Until it exists, the phone and the PC each count their own time. |
+| 4b | **The sync server** — `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join` | A day, on top of item 6 | Both clients are written and tested; there is nothing between them. QR device linking is built on both sides and needs the two `/link` endpoints to do anything. `server/models.py` defines the wire format and spells out the three things a server must get right (cumulative totals, the client's date, matching on the canonical key). Until it exists, the phone and the PC each count their own time. |
 | 5 | **Lawyer review of PRIVACY.md, plus ToS and a EULA** | A few hundred euros | The policy is accurate to the code but was not written by a lawyer. You also have no terms and no EULA at all. |
 | 6 | **Get the server source into git** | An afternoon | `server/` holds Pydantic models and nothing else. The deployed function holding user emails is unversioned, unreviewed and unbacked-up. |
 | 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | Cheaper now than after you have users. Also confirm you own the domain. |
@@ -153,7 +153,7 @@ What is shared is the rules: focus hours, limit semantics, usage accounting,
 the protected list and the sync protocol all live in one place and are held to
 the same test cases on both sides.
 
-State: `android/core/` compiles and passes 93 tests. `android/app/` is written
+State: `android/core/` compiles and passes 115 tests. `android/app/` is written
 but **has never been built** — this machine has no Android SDK. iOS is not
 started and needs an entitlement Apple grants case by case.
 

@@ -20,6 +20,15 @@ any of it. The first entry under a real version number will be written when
 
 ### Added
 
+- **Linking a phone to a PC by QR code.** The PC shows a code, the phone scans
+  it, and the two join a sync group. The eight characters stay on screen beside
+  it, because a camera that will not focus is a bad reason to be unable to link
+  a device. The key travels in the URL fragment, which never reaches a web
+  server, and the code stops being displayed before the server forgets it.
+- **A QR encoder in the standard library** (`core/qrcode.py`). Byte mode,
+  versions 1 to 10, all four error levels. Written rather than depended on:
+  every Python QR library pulls in Pillow, which was removed when pystray went.
+  Verified by reading generated symbols back with a real decoder.
 - **Cross-device sync.** A limit now counts phone and PC time together instead
   of each device allowing the full amount. The rules are shared between
   platforms (`core/syncproto.py`, `android/core/.../Sync.kt`) and held to the

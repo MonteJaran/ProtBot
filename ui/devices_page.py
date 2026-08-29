@@ -15,6 +15,9 @@ import webbrowser
 from tkinter import messagebox, ttk
 
 from core import licensing
+from core.logging_setup import get_logger
+
+log = get_logger("devices")
 
 try:
     from urllib.request import urlopen, Request
@@ -513,57 +516,134 @@ class DevicesPage(ttk.Frame):
 
         threading.Thread(target=_do, daemon=True).start()
 
+    # ── Showing a link code ───────────────────────────────────────────────
+
+    # Pixels per QR module. Small enough that a version-3 code fits a modest
+    # dialog, large enough that a phone camera resolves it at arm's length —
+    # below about 5 px the code becomes a coin toss on a scaled display.
+    QR_MODULE_PX = 7
+    QR_QUIET_MODULES = 4
+
     def _show_link_key(self, key: str):
-        # Cancel previous countdown if any
+        """
+        The link code, as a QR to scan and as characters to type.
+
+        Both, always. The QR is the fast path, and a camera that will not focus
+        is a bad reason to be unable to link a device — so the characters stay
+        on screen next to it rather than behind a "having trouble?" link.
+        """
+        from core import linking
+
         if self._link_countdown[0]:
             self.after_cancel(self._link_countdown[0])
 
-        self._link_seconds[0] = 300  # 5 minutes
+        try:
+            session = linking.LinkSession(key)
+        except linking.LinkError as exc:
+            # A code that cannot be encoded must not be drawn: the user would
+            # scan it, and it would fail on the phone instead of here.
+            messagebox.showerror("Link failed", str(exc), parent=self)
+            return
 
-        # Build or rebuild the key popup
         if hasattr(self, '_key_popup') and self._key_popup.winfo_exists():
             self._key_popup.destroy()
 
         popup = tk.Toplevel(self)
         popup.title("Link New Device")
-        popup.geometry("360x220")
         popup.configure(bg=BG)
         popup.transient(self)
         popup.resizable(False, False)
         self._key_popup = popup
 
-        tk.Label(popup,
-                 text="Enter this code on the other device",
-                 bg=BG, fg=TEXT2, font=('Segoe UI', 9)).pack(pady=(16, 4))
+        tk.Label(popup, text="Scan this with ProtBot on your phone",
+                 bg=BG, fg=TEXT, font=('Segoe UI', 11, 'bold'),
+                 ).pack(pady=(16, 2))
+        tk.Label(popup, text="Devices tab → Link a device → Scan",
+                 bg=BG, fg=TEXT2, font=('Segoe UI', 9)).pack(pady=(0, 10))
 
-        key_lbl = tk.Label(popup, text=key, bg=BG3, fg=SUCCESS,
-                           font=('Courier New', 28, 'bold'),
-                           padx=24, pady=12)
-        key_lbl.pack(fill='x', padx=24)
+        self._draw_qr(popup, session)
 
-        tk.Button(popup, text="Copy Code",
-                  bg=ACCENT, fg='#fff',
-                  font=('Segoe UI', 9, 'bold'),
-                  relief='flat', bd=0, padx=14, pady=6,
-                  command=lambda: self._copy(key)).pack(pady=(10, 4))
+        tk.Label(popup, text="or type this code",
+                 bg=BG, fg=TEXT2, font=('Segoe UI', 9)).pack(pady=(12, 2))
+        tk.Label(popup, text=session.formatted_key(), bg=BG3, fg=SUCCESS,
+                 font=('Courier New', 22, 'bold'), padx=20, pady=8,
+                 ).pack(fill='x', padx=24)
+
+        tk.Button(popup, text="Copy Code", bg=ACCENT, fg='#fff',
+                  font=('Segoe UI', 9, 'bold'), relief='flat', bd=0,
+                  padx=14, pady=6,
+                  command=lambda: self._copy(session.key)).pack(pady=(10, 2))
 
         self._countdown_lbl = tk.Label(popup, text="", bg=BG, fg=WARNING,
                                        font=('Segoe UI', 9))
         self._countdown_lbl.pack()
 
-        def _tick():
-            rem = self._link_seconds[0]
-            if rem <= 0:
-                if popup.winfo_exists():
-                    popup.destroy()
-                return
-            m, s = divmod(rem, 60)
-            if self._countdown_lbl.winfo_exists():
-                self._countdown_lbl.config(text=f"Expires in {m}:{s:02d}")
-            self._link_seconds[0] -= 1
-            self._link_countdown[0] = self.after(1000, _tick)
+        # Anyone who scans this joins the device group and can read its usage
+        # totals. Saying so is cheaper than explaining it afterwards.
+        tk.Label(popup,
+                 text="Anyone who scans this can see your usage totals.\n"
+                      "Do not share it or leave it in a screen recording.",
+                 bg=BG, fg=TEXT2, font=('Segoe UI', 8), justify='center',
+                 ).pack(pady=(6, 14), padx=20)
 
-        _tick()
+        self._tick_link_countdown(popup, session)
+
+    def _draw_qr(self, parent, session) -> None:
+        """
+        Draw the code on a Canvas, one rectangle per dark module.
+
+        Always black on white, whatever the app's theme. A QR rendered light-on-
+        dark is inverted, and while some scanners cope, plenty do not — and the
+        failure looks like a broken feature rather than a contrast problem.
+        """
+        try:
+            matrix = session.matrix()
+        except Exception as exc:
+            log.error("Could not build the link QR code: %s", exc)
+            tk.Label(parent,
+                     text="Could not draw the code — use the characters below.",
+                     bg=BG, fg=WARNING, font=('Segoe UI', 9)).pack(pady=8)
+            return
+
+        module = self.QR_MODULE_PX
+        quiet = self.QR_QUIET_MODULES
+        span = (len(matrix) + quiet * 2) * module
+
+        canvas = tk.Canvas(parent, width=span, height=span, bg='#ffffff',
+                           highlightthickness=0, bd=0)
+        canvas.pack()
+
+        for row, cells in enumerate(matrix):
+            for col, dark in enumerate(cells):
+                if not dark:
+                    continue
+                left = (col + quiet) * module
+                top = (row + quiet) * module
+                canvas.create_rectangle(left, top, left + module, top + module,
+                                        fill='#000000', outline='')
+
+    def _tick_link_countdown(self, popup, session) -> None:
+        """
+        Count down, and close the dialog when the code dies.
+
+        The window closing is the point. A code left on screen after the server
+        has forgotten it is worse than no code: someone scans it, waits, and
+        gets an error that says nothing about why.
+        """
+        if not popup.winfo_exists():
+            return
+
+        remaining = session.seconds_left()
+        if remaining <= 0:
+            popup.destroy()
+            return
+
+        minutes, seconds = divmod(remaining, 60)
+        if self._countdown_lbl.winfo_exists():
+            self._countdown_lbl.config(text=f"Expires in {minutes}:{seconds:02d}")
+
+        self._link_countdown[0] = self.after(
+            1000, lambda: self._tick_link_countdown(popup, session))
 
     def _show_join_dialog(self):
         dev_id = self.config.get("device_id") or ""

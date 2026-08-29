@@ -24,6 +24,13 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
+    # Two independent implementations, used only to check core/qrcode.py.
+    # A hand-written encoder cannot be verified by looking at its output, so
+    # the tests read symbols back with a real decoder and compare against a
+    # second encoder. Neither is imported by the app or shipped in a build.
+    "segno>=1.6",
+    "opencv-python-headless>=4.9",
+    "numpy>=1.24",
 ]
 
 [tool.pytest.ini_options]

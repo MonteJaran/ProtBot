@@ -61,6 +61,34 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+              Device linking. The PC shows a QR containing
+              https://protbot.app/l#1.<key>, and this filter means the stock
+              camera opens ProtBot directly instead of a browser.
+
+              An https App Link rather than a protbot:// scheme on purpose: a
+              custom scheme shows up in a camera as "no app can open this"
+              exactly when ProtBot is not yet installed, which is when someone
+              is most likely to be scanning. An https link lands on a page that
+              can explain what to install.
+
+              autoVerify needs assetlinks.json served from protbot.app. Until
+              that is published Android shows a chooser instead of opening
+              straight away — which still works, it is just one tap worse.
+
+              The key itself is in the URL fragment, which Android hands to the
+              app but no browser ever sends to a server. See core/linking.py.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="protbot.app"
+                    android:pathPrefix="/l" />
+            </intent-filter>
         </activity>
 
         <!--
