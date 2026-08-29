@@ -123,13 +123,12 @@ merchant of record, *then* build features 1–7.
 
 ## Under discussion
 
-Not scoped, not designed, and not started — recorded here only so the idea
-survives until it is.
-
 ### Parent-controlled profiles
-A parent's phone or PC would hold a "parent" profile that sets what a linked
-"kid" profile is allowed: which apps, what limits, what schedule — configured
-remotely rather than on the monitored device itself.
+**Direction chosen (2026-08-29): full remote control.** A parent's phone or PC
+holds a "parent" profile that pushes what a linked "kid" profile is allowed —
+apps, limits, schedule — to the kid's device, and the kid's device resists
+being switched off locally. Not started; this is the shape it should take when
+it is.
 
 - **This is a different product, not a bigger feature.** Everything sync does
   today is *usage totals flowing up* to be aggregated — it has no path for
@@ -137,23 +136,45 @@ remotely rather than on the monitored device itself.
   concept of one profile having authority over another's configuration at
   all. Building that is closer in size to cross-device sync itself than to
   any single item above it.
-- **It also collides with `PRIVACY.md` as written**, which currently says
-  ProtBot "is not intended for children under 16" and puts the burden of
-  legality for monitoring another person on the person doing the installing.
-  A parent-controls-child mode needs its own consent story (a parent
-  consenting on a minor's behalf is not the same legal act as self-monitoring
-  consent), its own data-handling section, and likely its own regulatory
-  reading — COPPA in the US, the GDPR's Article 8 child's-consent age, the
-  EU's rules for services aimed at minors. None of that is a code change.
-  Whether ProtBot takes that on at all is the owner's call, made once,
-  because the licence file already calls it "software you intend to sell"
-  and that decision compounds.
-- **The device also stops being able to trust its own user.** Today's threat
-  model is explicit: the machine belongs to whoever runs it, so client-side
-  enforcement is deterrence, not security (`core/licensing.py`'s own words).
-  A kid profile needs the opposite property — resistant to being turned off
-  *by the person sitting at it* — which is a materially harder problem the
-  app has never had to solve.
+- **It collides with `PRIVACY.md` as written**, which currently says ProtBot
+  "is not intended for children under 16" and puts the burden of legality for
+  monitoring another person on the person doing the installing. A
+  parent-controls-child mode needs its own consent story (a parent consenting
+  on a minor's behalf is not the same legal act as self-monitoring consent),
+  its own data-handling section, and likely its own regulatory reading —
+  COPPA in the US, the GDPR's Article 8 child's-consent age, the EU's rules
+  for services aimed at minors. None of that is a code change, and it has to
+  land before the feature does, not after — see BL-03 for what shipping
+  monitoring ahead of its privacy notice already cost once.
+- **The device stops being able to trust its own user.** Today's threat model
+  is explicit: the machine belongs to whoever runs it, so client-side
+  enforcement is deterrence, not security (`core/licensing.py`'s own words). A
+  kid profile needs the opposite property — resistant to being turned off *by
+  the person sitting at it* — which the app has never had to solve, and
+  `core/licensing.py`'s own honesty about what client-side control can't do
+  applies here even harder: a locally-installed agent cannot be made fully
+  tamper-proof against the device's own user, only tamper-*resistant*, and the
+  design should say so rather than promise otherwise.
+
+**Build sequence, once someone starts it:**
+
+1. **`PRIVACY.md` and consent, first.** A parent-consents-for-a-minor flow,
+   a data-handling section naming what a kid profile sends and to whom, and
+   the age-of-consent reading for wherever this ships. Nothing below should
+   be built ahead of this landing — that ordering is the lesson of BL-03.
+2. **A profile/role model.** Today every device is a peer; this needs
+   "parent" and "kid" as distinct roles with one owning the other's config,
+   which is a real schema change (`core/config.py`, `server/models.py`),
+   not a flag.
+3. **A settings-down protocol**, symmetric to the settings-up one
+   `server/models.py` already documents for usage sync: what a parent can
+   set, how a kid device pulls it, and — same discipline as note 4 in
+   `server/models.py` — the auth story for it from day one rather than
+   retrofitted the way SF-09 had to be for usage sync.
+4. **Local tamper resistance on the kid device**, honestly scoped as
+   resistance, not proof, per `core/licensing.py`'s own framing.
+5. **Android parity.** Whichever device is the "kid" device most often needs
+   this working on both platforms from the start, not desktop-first.
 
 ---
 
