@@ -1,58 +1,40 @@
-# What's left
+# What's left, and what's done
 
-Current state and remaining work. `AUDIT.md` is the historical record of what
-was found and fixed; this is the forward-looking list.
+The forward-looking list. `AUDIT.md` is the historical record of what the
+readiness audit found; `CHANGELOG.md` is the user-facing record of what
+changed. This file is the working todo, and it is kept current — see
+`CLAUDE.md`.
 
-**Where things stand:** 693 Python tests green on 3.10 and 3.12, plus 115
-Kotlin tests for the shared Android rules; lint clean. Every safety-critical
-and legal finding from the audit is closed or has its remaining part named
-below. What is left splits cleanly into *things only you can do* and *things
-anyone can code*.
+**Where things stand:** 698 Python tests green on 3.10 and 3.12, plus 115
+Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
+audit clean. Every safety-critical and legal finding from the audit is closed
+or has its remaining part named below.
 
-*Last re-audited 2026-08-29.* That pass found six things that were missing
-rather than half-built — no licence file, no third-party notices, no crash
-handling, no way to export your own data, no security policy, no changelog —
-plus one live legal gap: consent could be given and never withdrawn. All are
-now closed. What it could not close is listed below.
+**The one-line summary:** the code is in better shape than the product. Nothing
+has ever been built, nobody has ever installed it, and almost everything now
+standing between here and a first release is a decision or an account rather
+than a commit.
+
+*Last updated 2026-08-29.*
 
 ---
 
-## Blocked on you — nothing can proceed without these
-
-These are the real gates. No amount of coding moves them.
+## Blocked on you — no amount of coding moves these
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Unknown — check https://github.com/settings/billing | CI has never run. Every check is red, and every job fails with "account is locked due to a billing issue". You are flying blind on every push. |
-| 2 | **Microsoft Store developer account** | ~$19 one-time, possibly free now | Microsoft signs Store packages, so **SmartScreen stops warning** — same result as a €300/yr certificate. Also gives you a distribution channel and a payment system. Cheapest unlock on this list by a wide margin. |
-| 3 | **Merchant of record** (Paddle or Lemon Squeezy) | ~5% of revenue | The client licensing gate is built. Without this there is nothing to sell keys with. Both handle EU VAT for you. |
-| 4 | **A `/license/verify` endpoint** | A morning's work on the server | The client calls it and handles every failure mode. It does not exist. |
-| 4b | **The sync server** — `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join` | A day, on top of item 6 | Both clients are written and tested; there is nothing between them. QR device linking is built on both sides and needs the two `/link` endpoints to do anything. `server/models.py` defines the wire format and spells out the three things a server must get right (cumulative totals, the client's date, matching on the canonical key). Until it exists, the phone and the PC each count their own time. |
-| 5 | **Lawyer review of PRIVACY.md, plus ToS and a EULA** | A few hundred euros | The policy is accurate to the code but was not written by a lawyer. You also have no terms and no EULA at all. |
-| 6 | **Get the server source into git** | An afternoon | `server/` holds Pydantic models and nothing else. The deployed function holding user emails is unversioned, unreviewed and unbacked-up. |
-| 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | Cheaper now than after you have users. Also confirm you own the domain. |
-| 7b | **Decide a published contact address** | Free, but it is a decision | `PRIVACY.md` and `SECURITY.md` both have a placeholder. GDPR Article 13 *requires* the controller's contact details — a policy without one is not compliant. Whether that is your personal email or a `security@` on your own domain is your call, which is why neither file guesses. A test fails the day the placeholder is deleted without an address replacing it. |
-| 7c | **Confirm the licence** | Free, but effectively one-way | `LICENSE` now states the all-rights-reserved default explicitly, which is right for something you intend to sell and preserves every option. If you would rather it were open source, decide that deliberately: a permissive licence cannot be recalled from copies people already hold. |
-| 8 | **A clean Windows VM** | Free | Nothing in `packaging/` or `core/tray.py` has ever run. See below. |
-
----
-
-## Never been run
-
-Everything Windows-specific was written against documentation and verified only
-by tests that read the source. It is very likely something here is wrong.
-
-- **`core/tray.py`** — the whole Win32 tray icon, via ctypes. Degrades to "no
-  tray" on failure rather than crashing, so the worst case is a missing icon.
-- **`packaging/build.ps1`, `protbot.spec`, `installer.iss`** — the entire
-  build and installer. `build.ps1` launches the frozen app and checks it stays
-  running for eight seconds, which is the gate that matters: a missing hidden
-  import kills a frozen GUI app *silently*.
-- **`core/activity.py`'s two OS probes** — foreground window and idle time. The
-  policy they feed is tested; the probes themselves are not.
-- **`create_shortcut.ps1`** — rewritten for PowerShell 5.1 but not executed.
-
-The release checklist in `BUILD.md` walks the first real build.
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 813 tests below are only as good as the last time someone ran them by hand. |
+| 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
+| 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
+| 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
+| 5 | **Publish a contact address** | Free, but it is a decision | `PRIVACY.md` and `SECURITY.md` both hold a placeholder. GDPR Article 13 *requires* the controller's contact details; a policy without one is not compliant. Whether that is a personal email or `security@` on your own domain is your call, which is why neither file guesses. A test fails the day either placeholder is deleted without a real address replacing it. |
+| 6 | **Confirm the licence** | Free, effectively one-way | `LICENSE` states the all-rights-reserved default explicitly, which is right for something you intend to sell and keeps every option open. Open source instead is a deliberate, irreversible decision — a permissive licence cannot be recalled from copies people already hold. |
+| 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | An evening now, far cheaper than after a store listing is built on the name. |
+| 8 | **Get the server source into git** | An afternoon | `server/` holds request models and nothing else. The deployed function that holds user emails is unversioned, unreviewed and unbacked-up. Everything below that touches the server waits on this. |
+| 9 | **Build the sync server** — `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join` | A day, after #8 | Both clients are written and tested against a fake transport; there is nothing between them. `server/models.py` defines the wire format and spells out the three things a server must get right: cumulative totals, the client's own date, and matching on the canonical key. Until it exists the phone and the PC each count their own time, and QR linking has nothing to talk to. |
+| 10 | **Build `/license/verify`** | A morning, after #8 | The client calls it and already handles every failure mode — offline grace, refusal, server error. The endpoint does not exist. |
+| 11 | **Sign up a merchant of record** | ~5% of revenue | Paddle or Lemon Squeezy. The licence gate is built and there is nothing to sell keys with. Both handle EU VAT, which is the part you do not want to own. |
+| 12 | **Lawyer: review `PRIVACY.md`, write terms and a EULA** | A few hundred € | The policy is accurate to the code — every claim in it is checked by a test — but was not written by a lawyer, and there are no terms and no EULA at all. Before any public release or any money changing hands. |
 
 ---
 
@@ -60,57 +42,142 @@ The release checklist in `BUILD.md` walks the first real build.
 
 Roughly in value order.
 
-### 1. API authentication (AUDIT SF-09)
-`GET /sync/{device_id}` sends no token. The device ID *is* the credential and
-it travels in the URL path, where it lands in server and proxy logs. Anyone
-holding or guessing one can read that user's data.
+### 1. Authenticate the sync API (AUDIT SF-09)
+The device ID *is* the credential and it travels in the URL path, where it
+lands in server and proxy logs. Anyone holding or guessing one can read that
+user's data. Client plumbing is a day; the server half waits on #8 above.
 
-Client-side plumbing is a day. The server half is item 6 above.
+### 2. Publish `assetlinks.json` on protbot.app
+The Android manifest declares `autoVerify="true"` for the device-link URL.
+Without the assetlinks file served from the domain, Android shows a chooser
+instead of opening ProtBot directly — it still works, it is one tap worse.
+Waits on #4 above.
 
-### 2. ~~Pin dependencies by hash~~ — DONE
-`requirements.lock` pins every dependency to an exact version and SHA-256 hash.
-Install release builds with `--require-hashes`.
+### 3. The in-app QR scanner
+`Linking.parsePayload` reads a scanned code and the manifest opens the app from
+one, so the stock-camera path is complete. What is missing is scanning from
+*inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
+machine with no Android SDK.
 
-### 3. Make it an installable package (AUDIT ST-04 remainder)
-`main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
-would drop the hack and make the PyInstaller spec simpler.
-
-### 4. Accessibility (AUDIT ST-06 remainder)
-DPI awareness and font sizes are fixed. Still missing: keyboard navigation,
+### 4. Finish the accessibility work (AUDIT ST-06 remainder)
+DPI awareness and font sizes are done. Still missing: keyboard navigation,
 screen-reader labelling, a high-contrast mode. The EU Accessibility Act has
 applied to consumer software since June 2025.
 
-### 5. Remaining roadmap features
-In `ROADMAP.md`, all buildable, none blocking:
-pattern recognition over your own history (plain statistics, no model needed),
-predictive alerts, PDF/Excel export, team features (needs #1 and sync first).
+### 5. Generate an SBOM, for the EU Cyber Resilience Act
+Regulation (EU) 2024/2847 applies to products with digital elements sold in the
+EU. Vulnerability-reporting obligations begin **11 September 2026**; full
+application **11 December 2027**. Partly covered already — `SECURITY.md` is the
+vulnerability policy, `pip-audit` runs in CI, dependencies are hash-pinned.
+Missing is the bill of materials; `cyclonedx-py` over the lockfile in a CI job
+is most of it.
 
-### 6. ~~Rename to ProtBot~~ — DONE
-The code says ProtBot everywhere, and `core/paths.py` migrates an existing
-`%LOCALAPPDATA%\FocusGuard` folder on first run. `LEGACY_APP_NAME` in that file
-is the only thing that finds a previous install's data and **must never be
-renamed with the app**; there is a test that fails if it is.
+### 6. Build the Android app for real
+The shared rules compile and pass 115 tests. `android/app/` has never been
+compiled, because this machine has no Android SDK. Until someone runs
+`gradle :app:assembleDebug`, the Android half is source code rather than
+software.
 
-### 7. An SBOM, for the EU Cyber Resilience Act
-Regulation (EU) 2024/2847 applies to "products with digital elements" made
-available in the EU. Vulnerability-reporting obligations begin **11 September
-2026** and the regulation applies in full from **11 December 2027**. It expects
-a software bill of materials, a vulnerability-handling process, security
-updates over a defined support period, and CE marking.
+### 7. Write the Android screens
+The app picker (the `<queries>` block is declared, the UI is not), limit
+editing, and the insights screen. The blocking logic underneath them is done
+and tested.
 
-Partly done already: `SECURITY.md` is the vulnerability policy, `pip-audit`
-runs in CI, and `requirements.lock` pins by hash. Missing is a generated SBOM —
-`cyclonedx-py` over the lockfile in a CI job is most of it. Not urgent with
-zero users and nothing released, but the dates are close enough to plan around
-rather than discover.
-
-### 8. Linking apps across devices by hand
+### 8. Let people link apps across devices by hand
 `syncproto.canonical_app_key` joins the same app on two devices by normalising
-its name, and it is a good guess rather than a guarantee — a package named
-after its vendor instead of its product will not match the desktop executable.
-A small screen letting the user say "these two are the same app" closes the
-gap. Nothing depends on it: an unmatched app simply counts per-device, which is
-the behaviour without sync.
+its name — a good guess, not a guarantee. A package named after its vendor
+rather than its product will not meet the desktop executable. A small screen
+saying "these two are the same app" closes it. Nothing depends on it: an
+unmatched app simply counts per-device.
+
+### 9. Make it an installable package (AUDIT ST-04 remainder)
+`main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
+drops the hack and simplifies the PyInstaller spec.
+
+### 10. The remaining roadmap features
+In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
+user's own history (plain statistics, no model needed), predictive alerts, PDF
+and Excel export, team features. None worth starting before someone has
+installed the app.
+
+---
+
+## Written but never executed
+
+Everything Windows-specific was written against documentation and verified only
+by tests that read the source rather than run it. It is likely something here
+is wrong. Listed so it surprises you on your own machine rather than a user's.
+
+- **`core/tray.py`** — the whole Win32 tray icon, through ctypes. Degrades to
+  "no tray" on failure rather than crashing, so the worst case is a missing
+  icon.
+- **`packaging/build.ps1`, `protbot.spec`, `installer.iss`** — the entire build
+  and installer. `build.ps1` launches the frozen app and checks it survives
+  eight seconds; that is the gate that matters, because a missing hidden import
+  kills a frozen GUI app *silently*.
+- **`core/activity.py`'s two OS probes** — foreground window and idle time. The
+  policy they feed is tested thoroughly; the probes have never returned a real
+  value.
+- **`create_shortcut.ps1`** — rewritten for PowerShell 5.1, never executed.
+- **`android/app/`** — written in full, never compiled. No Android SDK here.
+
+`BUILD.md` walks the first real build.
+
+---
+
+## Finished
+
+### The app itself
+
+| Done | What it means |
+|---|---|
+| **Graceful close** | `WM_CLOSE`, a wait, then a forced terminate only as a last resort — instead of an immediate kill that lost unsaved work. |
+| **Protected-process denylist** | ProtBot can never close Windows critical processes, the shell, Task Manager, security software, or itself. Enforced in three places, not just the dialog that adds an app. |
+| **Sleep and idle accounting** | Closing the lid overnight with a browser open used to book eight hours of "usage" and close it on resume. A gap longer than 1.5 poll intervals is now credited as one interval. |
+| **The midnight split** | Time after midnight was filed under the previous day. The session is now split *before* the interval is credited. |
+| **Blocked apps actually block** | The `-1` sentinel multiplied out to a negative limit and produced a 0% reading, so a blocked app never triggered. All limit reads go through one function. |
+| **Scheduled focus hours** | A recurring window that tightens existing limits, including windows crossing midnight. Never loosens one. |
+| **Data retention** | History past the window is dropped on the daily rollover. One year by default. |
+| **Atomic config writes, thread locking, storage hardening** | A crash mid-write used to truncate the config and reset every setting. |
+| **Rotating logs** | And a log the user can delete, because it is a plaintext record of every app opened. |
+| **DPI awareness** | The UI is no longer bitmap-stretched on any display above 100% scaling. |
+| **Crash handling** | Unhandled exceptions on the main thread, background threads and Tk callbacks all reach the log. A frozen build has no console, so a dead monitor thread used to mean limits silently stopped being enforced while the window looked fine. |
+| **A ctypes tray icon** | Replaced pystray, which dropped the LGPL-3.0 §4 obligations that are awkward to satisfy in a frozen build. |
+
+### Cross-device
+
+| Done | What it means |
+|---|---|
+| **An Android app** | A second application sharing the desktop's rules — focus hours, limit semantics, usage accounting, the protected list, the block decision. `android/core/` compiles and passes 115 tests. |
+| **Cross-device sync** | A two-hour limit means two hours across both devices, not two hours each. Uploads are cumulative so a retry cannot double-count; the day is the client's day; merging subtracts this device's own stale contribution rather than taking the larger number. |
+| **QR device linking** | The PC shows a code, the phone scans it. The key travels in the URL fragment, which never reaches a web server. An https App Link, not a custom scheme, so the stock camera can open it. The characters stay on screen beside the code as a fallback. |
+| **A QR encoder** | `core/qrcode.py`, standard library only — byte mode, versions 1–10, all four error levels. Verified by reading generated symbols back with a real decoder, which caught two bugs that produced pixel-perfect unreadable codes. |
+
+### Legal and compliance
+
+| Done | What it means |
+|---|---|
+| **Third-party ads removed** | Real brand names were shipping in an in-app ad slot. A test fails the build if one returns. |
+| **No advertising features that do not exist** | The plan comparison listed unimplemented features as included. A test fails if that returns. |
+| **Privacy consent gate** | Nothing is recorded until the policy has been shown and accepted. |
+| **Consent can be withdrawn** | GDPR Art. 7(3). `revoke_consent` and `open_policy` existed and nothing in the UI called either — consent was taken once at first run and could never be revisited. |
+| **Export My Data** | GDPR Art. 15 and 20. The app could delete everything and hand back nothing. Licence and sync credentials deliberately excluded, so the file is safe to send on. |
+| **`LICENSE`** | A public repo with no licence is all-rights-reserved by default and nobody can tell. |
+| **`THIRD_PARTY_NOTICES.md`** | psutil (BSD-3-Clause) and plyer (MIT) both require their notice reproduced in a binary distribution. Bundled *in the build*, with a test that fails if the lockfile and the notices drift apart. |
+| **`SECURITY.md`** | Somewhere to report a vulnerability, plus the weaknesses that are known and accepted so nobody rediscovers them. |
+| **`CHANGELOG.md`** | `core/updates.py` tells users to update; without this it asks them to take it on trust, and a security fix ships looking routine. |
+| **The installer licence page** | Pointed at `PRIVACY.md`, asking users to "accept" a privacy policy. It shows `LICENSE` now. |
+
+### Engineering
+
+| Done | What it means |
+|---|---|
+| **813 tests** | 698 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
+| **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
+| **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
+| **Renamed to ProtBot** | Including the data directory, with a migration that never overwrites newer data and never deletes the old folder if the move fails. |
+| **Signed, machine-bound licence gate** | 14-day offline grace. Server errors never revoke; only an explicit refusal does. |
+| **A real distribution** | PyInstaller spec, Inno installer, working uninstaller. Never run — see above. |
 
 ---
 
@@ -123,69 +190,39 @@ Recorded so nobody rediscovers them as bugs.
 - **Client-side licensing is deterrence, not security.** The machine belongs to
   the user. The server is the authority for anything that costs money to
   provide; the client cache is tamper-*evident*, not tamper-proof.
-- **The midnight split can misattribute up to one poll interval.** The straddling
-  interval goes to the new day. Bounded, and it errs toward the safer side.
-- **Premium gates nothing yet.** `_PREMIUM_FEATURES` is deliberately empty — the
-  paid tier does not gate a single shipped feature. That is honest, and it is
-  also the reason there is nothing to sell.
+- **The midnight split can misattribute up to one poll interval.** The
+  straddling interval goes to the new day. Bounded, and it errs safe.
+- **Premium gates nothing yet.** `_PREMIUM_FEATURES` is deliberately empty. That
+  is honest, and it is also the reason there is nothing to sell.
 - **Sync stops enforcing after two hours offline.** A group total older than
-  that is dropped and each device falls back to its own usage. Enforcing a
-  limit against a two-hour-old guess is the worse failure.
-- **The Android app has never been compiled.** The shared rules have; the
-  Android layer needs an SDK this machine does not have.
-- **The changelog has no released version in it.** Nothing has shipped, so
-  every entry sits under Unreleased. A test fails if that claim stops being
-  true without a version being added.
-- **The export leaves out the licence blob and the device id.** They are
-  credentials, and an export is a file the user may send to someone else. The
-  file says what was left out and why, rather than omitting it silently.
+  that is dropped and each device falls back to its own usage. Enforcing a limit
+  against a two-hour-old guess is the worse failure.
+- **The app-name join across devices is a guess.** No string rule resolves a
+  package named after its vendor without a brand list. An unmatched app counts
+  per-device, which is the behaviour without sync.
+- **A link code is a secret with a short life.** Whoever scans it joins the
+  device group and can read its totals. Five minutes, single use, and the
+  dialog says so.
+- **The Android app has never been compiled.** The shared rules have.
+- **The changelog has no released version.** Nothing has shipped. A test fails
+  if that claim stops being true without a version being added.
 
 ---
 
-## Android and the app stores
-
-See [`PLATFORMS.md`](PLATFORMS.md) and [`android/README.md`](android/README.md).
-
-Android is a **separate application**, not a build of this one — Tkinter does
-not run there, and Android forbids listing or closing other apps, so tracking
-goes through `UsageStatsManager` and blocking through an `AccessibilityService`.
-What is shared is the rules: focus hours, limit semantics, usage accounting,
-the protected list and the sync protocol all live in one place and are held to
-the same test cases on both sides.
-
-State: `android/core/` compiles and passes 115 tests. `android/app/` is written
-but **has never been built** — this machine has no Android SDK. iOS is not
-started and needs an entitlement Apple grants case by case.
-
-Cross-device sync is written on both platforms and wired into both limit
-checks, so an hour on the phone plus an hour on the PC reaches a two-hour
-limit. The server it talks to does not exist yet — item 4b above.
-
-## What the 2026-08-29 re-audit closed
-
-Recorded so the next audit does not rediscover them.
-
-| Gap | Why it mattered | Closed by |
-|---|---|---|
-| No `LICENSE` | A public repo with no licence is all-rights-reserved by default and nobody can tell. Some tooling reads the absence as permission. | `LICENSE`, plus `license` metadata in `pyproject.toml` |
-| No third-party notices | psutil (BSD-3-Clause) and plyer (MIT) both require their notice to be reproduced in a binary distribution. Shipping without one is a licence breach. | `THIRD_PARTY_NOTICES.md`, bundled by the spec and installer, with a test that fails if the lockfile and the notices drift apart |
-| Installer "licence" page showed the privacy policy | It asked the user to *accept* a privacy policy, which is not what a policy is for. | `LicenseFile` now points at `LICENSE`; the policy is shown as information beforehand |
-| No crash handling | A frozen build has no console. An exception on a background thread killed the monitor silently — limits stopped being enforced while the window kept showing old numbers. | `core/crash.py`, covering the main thread, background threads and Tk callbacks |
-| No data export | The app could delete everything (Art. 17) and hand back nothing (Art. 15, Art. 20). | `core/dataexport.py` and Settings → **Export My Data**; credentials deliberately excluded |
-| **Consent could not be withdrawn** | Art. 7(3) requires withdrawal to be as easy as giving consent. `revoke_consent` and `open_policy` existed and *nothing in the UI called either* — consent was given once at first run and never revisitable. | Settings → **Withdraw Consent** and **Read Privacy Policy** |
-| No security policy | Nowhere to report a vulnerability, and the known-and-accepted weaknesses were undocumented. | `SECURITY.md` |
-| No changelog | `core/updates.py` tells users to update without saying what changed — which is also how a security fix goes out looking routine. | `CHANGELOG.md` |
-| No dependency scanning | Pinning by hash makes builds reproducible and also freezes any advisory published after the pin. | `pip-audit` in CI against `requirements.lock`, plus Dependabot |
-
 ## Suggested order
 
-1. **Billing** — until CI runs you cannot trust any push
-2. **Microsoft Store account** — the cheapest thing that removes SmartScreen
-3. **First real Windows build** on a clean VM, working through `BUILD.md`
-4. **Rename**, if you are going to — before anyone installs
-5. **Merchant of record + `/license/verify`** — the last mile to taking money
-6. **Lawyer**, before any public release
-7. *Then* features, and only then marketing
+1. **Unlock billing.** Until CI runs you cannot trust a single push.
+2. **Microsoft Store account.** $19 to stop SmartScreen frightening everyone
+   who tries to install.
+3. **First real Windows build**, on a clean VM, through `BUILD.md`. Find out
+   what is broken.
+4. **The three decisions**: the domain, the contact address, the licence. No
+   code, all required before the repo goes public.
+5. **Server into git, then the endpoints** — sync and linking first, licence
+   verification second.
+6. **Merchant of record.** The last mile to taking money.
+7. **Lawyer**, before any public release.
+8. **Then features** — and only then marketing. €50 of ads pointed at an app
+   nobody can install is €50 spent teaching people it does not work.
 
-Steps 1–3 cost almost nothing and unblock everything. Nothing on the feature
-list matters until an install completes without a scary warning.
+Steps 1–3 cost almost nothing and unblock everything else.

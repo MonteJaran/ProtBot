@@ -363,3 +363,81 @@ class TestPolicyMatchesTheCode:
         has_address = re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", policy)
         marked_todo = "Add a real contact address here before release" in policy
         assert has_address or marked_todo
+
+
+class TestTheTodoStaysCurrent:
+    """
+    `STATUS.md` is what the owner reads to decide what to do next. A stale one
+    sends them at work that is already done, or hides work that is not — and
+    nothing else in the repository notices.
+
+    So the numbers in it are checked against reality. This is the same trick
+    the rest of this file uses on the privacy policy: a claim that can drift
+    silently gets a test that fails when it does.
+    """
+
+    @staticmethod
+    def claimed(pattern: str) -> int:
+        match = re.search(pattern, read("STATUS.md"))
+        assert match, f"STATUS.md no longer states its {pattern!r}"
+        return int(match.group(1))
+
+    def test_the_python_test_count_is_current(self, request):
+        # Only meaningful on a full run. When a single file is being run the
+        # collected set is a fraction of the suite, and comparing would fail
+        # for a reason that has nothing to do with the todo.
+        import glob
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        collected = request.session.items
+        modules = {item.module.__name__ for item in collected}
+        on_disk = glob.glob(os.path.join(REPO_ROOT, "tests", "test_*.py"))
+        if len(modules) < len(on_disk):
+            pytest.skip("not a full-suite run")
+
+        claimed = self.claimed(r"\*\*Where things stand:\*\* ([\d,]+) Python tests")
+        assert claimed == len(collected), (
+            f"STATUS.md says {claimed} Python tests; there are {len(collected)}. "
+            "Update the todo in the same commit as the tests — see CLAUDE.md."
+        )
+
+    def test_the_kotlin_test_count_is_current(self):
+        # Counted from the source rather than by running Gradle, which the
+        # Python suite has no business doing. An @Test annotation per test is
+        # the convention throughout android/core.
+        import glob
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        pattern = os.path.join(REPO_ROOT, "android", "core", "src", "test",
+                               "kotlin", "app", "protbot", "core", "*.kt")
+        actual = 0
+        for path in glob.glob(pattern):
+            with open(path, encoding="utf-8") as fh:
+                actual += len(re.findall(r"^\s*@Test\b", fh.read(), re.MULTILINE))
+
+        assert actual, "no Kotlin tests found; has the layout moved?"
+        claimed = self.claimed(r"([\d,]+)\s*\nKotlin tests")
+        assert claimed == actual, (
+            f"STATUS.md says {claimed} Kotlin tests; there are {actual}."
+        )
+
+    def test_it_records_what_is_finished_as_well_as_what_is_left(self):
+        # A todo that only ever grows is a todo nobody reads twice.
+        status = read("STATUS.md")
+        assert "## Finished" in status
+        assert "## Blocked on you" in status
+        assert "## Can be coded now" in status
+
+    def test_it_says_when_it_was_last_updated(self):
+        assert re.search(r"\*Last updated \d{4}-\d{2}-\d{2}\.\*", read("STATUS.md"))
+
+    def test_claims_about_what_has_never_run_stay_honest(self):
+        # These are the load-bearing caveats. If a build ever happens, this
+        # section is the first thing that should change.
+        status = read("STATUS.md")
+        assert "Written but never executed" in status
+        assert "never compiled" in status

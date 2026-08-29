@@ -23,11 +23,30 @@ the command above rather than pushing.
 Work lands on `main`. Do not open a pull request unless asked — the owner
 merges directly.
 
+## Always update the todo
+
+`STATUS.md` is the working todo, and **updating it is part of finishing a
+change, not an optional extra.** The owner reads that file to decide what to do
+next; a stale one sends them at work that is already done, or hides work that
+is not. Treat it the way you would treat a failing test.
+
+Every change that lands updates it in the same commit:
+
+- move what you finished into the **Finished** section, saying what it means
+  rather than naming the commit;
+- add anything the work turned up — a new blocker, a follow-up, a thing you
+  deliberately left out;
+- correct the test counts in the header if they moved;
+- update *Last updated*.
+
+`CHANGELOG.md` is the user-facing record and moves on the same schedule.
+`AUDIT.md` is history and does not get rewritten.
+
 ## Where things are written down
 
 | File | What it holds |
 |---|---|
-| `STATUS.md` | **The todo.** What is left, split into blocked-on-the-owner and codeable. Keep it current; it is the file the owner reads. |
+| `STATUS.md` | **The todo.** What is left, split into blocked-on-the-owner and codeable, plus what is finished. Keep it current — see above. |
 | `AUDIT.md` | Historical record of the readiness audit and what each finding became. Do not rewrite history here. |
 | `CHANGELOG.md` | Keep a Changelog format. Nothing has shipped, so entries sit under Unreleased. |
 | `ROADMAP.md` | Features, none of them blocking. |
