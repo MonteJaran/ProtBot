@@ -31,7 +31,13 @@ Two things to expect, neither of them a fault:
   access, and Display over other apps, both under Settings → Apps → Special
   app access. Without the first it records nothing at all.
 
-**This requires GitHub Actions to be able to run.** At the time of writing
+**The "Run workflow" button only appears once `build.yml` is on `main`.**
+That is a GitHub rule, not a quirk of this file: a `workflow_dispatch`
+workflow is not registered until it exists on the default branch. Dispatching
+it against a feature branch before then returns 404. Once it is on `main` you
+can still run it against any branch you like, from the branch dropdown.
+
+**This also requires GitHub Actions to be able to run.** At the time of writing
 every job fails within seconds with no runner assigned, which is the billing
 lock in `STATUS.md` item 1 — not a fault in the workflow. Until that is
 cleared, use the manual routes below.
