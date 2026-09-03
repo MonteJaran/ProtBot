@@ -43,6 +43,10 @@ DEFAULT_CONFIG: dict = {
     # database from growing for as long as ProtBot stays installed.
     "retention_days": 365,
     "first_run": True,
+    # AUDIT ST-06. A restart-required setting, not a live one — see
+    # ui/theme.py's module docstring for why Tk cannot re-theme a window
+    # that is already built.
+    "high_contrast": False,
     # Privacy consent (see core/consent.py). 0 = never accepted; the app shows
     # the consent gate and records nothing until this matches CONSENT_VERSION.
     "consent_version": 0,

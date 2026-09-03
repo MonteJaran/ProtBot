@@ -11,18 +11,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 
+from ui import a11y
+# See ui/theme.py's docstring: the canonical definitions, and the
+# high-contrast alternative (AUDIT ST-06), live there.
+from ui.theme import BG, BG2, BG3, TEXT, TEXT2, SUCCESS, ERROR
+
 # ── Color Scheme ─────────────────────────────────────────────────────────────
 log = get_logger("ui.processes")
-
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
 
 
 def _fmt_sec(seconds: int) -> str:
@@ -300,6 +295,7 @@ class ProcessesPage(ttk.Frame):
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
+        a11y.bind_escape_closes(dialog)
 
         tk.Label(dialog, text=f"Usage limits for: {app['name']}",
                  bg=BG, fg=TEXT, font=('Segoe UI', 11, 'bold')).pack(padx=16, pady=(14, 8), anchor='w')

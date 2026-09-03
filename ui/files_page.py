@@ -9,17 +9,10 @@ from tkinter import ttk, filedialog, messagebox
 
 from core.apps_list import DEFAULT_APPS, APP_CATEGORIES, find_app_path, find_main_exe_in_folder
 from core.protected import is_protected, protection_reason
-
-# ── Color Scheme (mirrors app.py) ────────────────────────────────────────────
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
+from ui import a11y
+# See ui/theme.py's docstring: the canonical definitions, and the
+# high-contrast alternative (AUDIT ST-06), live there.
+from ui.theme import BG, BG3, ACCENT, TEXT, TEXT2, SUCCESS, ERROR
 
 
 class FilesPage(ttk.Frame):
@@ -185,6 +178,7 @@ class FilesPage(ttk.Frame):
         dialog.configure(bg=BG)
         dialog.transient(self)
         dialog.grab_set()
+        a11y.bind_escape_closes(dialog)
 
         # ── Filter bar ───────────────────────────────────────────────────────
         filter_frame = ttk.Frame(dialog, style='TFrame')
@@ -434,6 +428,7 @@ class FilesPage(ttk.Frame):
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
+        a11y.bind_escape_closes(dialog)   # cancels, same as closing the window
 
         def _lbl(parent, text: str, row: int) -> None:
             tk.Label(parent, text=text, bg=BG, fg=TEXT2,
@@ -627,6 +622,10 @@ def _ask_string(parent, title: str, prompt: str, default: str = ""):
 
     entry.bind('<Return>', ok)
     entry.bind('<Escape>', lambda e: cancel())
+    # Belt and suspenders: the binding above only fires while the entry
+    # itself has focus. This one covers Escape from anywhere else in the
+    # dialog too — e.g. after tabbing to a button.
+    a11y.bind_escape_closes(dialog, on_close=cancel)
 
     btn_frame = ttk.Frame(dialog, style='TFrame')
     btn_frame.pack(fill='x', padx=16, pady=(10, 12))

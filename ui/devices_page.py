@@ -15,20 +15,17 @@ from tkinter import messagebox, ttk
 
 from core import licensing
 from core.logging_setup import get_logger
+from ui import a11y
+# The nine core colours (and the high-contrast alternative) live in
+# ui/theme.py; TEXT3/GOLD/PURPLE are this page's own — see that module's
+# docstring for why. theme.apply_to_modules() re-points the imported names
+# in place before this page is ever built (ui/app.py, MainApp.__init__).
+from ui.theme import BG, BG2, BG3, ACCENT, TEXT, TEXT2, SUCCESS, WARNING, ERROR
 
 log = get_logger("devices")
 
 # ── Colour palette (matches app.py) ──────────────────────────────────────────
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
 TEXT3   = '#6a6a7a'   # dimmed — used for not-yet-built ("planned") features
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
 GOLD    = '#fbbf24'
 PURPLE  = '#a78bfa'
 
@@ -117,7 +114,11 @@ class DevicesPage(ttk.Frame):
         self._inner.bind_all('<MouseWheel>',
             lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units'))
 
-        # Keyboard scroll — focus canvas on click so keys are captured
+        # Keyboard scroll. Tab reaches the canvas too, not just a click — a
+        # Canvas is not focusable by default in Tk (AUDIT ST-06); see
+        # ui/a11y.py's focus_scrollable for why that needed an explicit fix
+        # rather than being something Tab traversal already handled.
+        a11y.focus_scrollable(canvas, self.config)
         canvas.bind('<Button-1>', lambda e: canvas.focus_set())
         canvas.bind('<Up>',       lambda e: canvas.yview_scroll(-1, 'units'))
         canvas.bind('<Down>',     lambda e: canvas.yview_scroll( 1, 'units'))
@@ -524,6 +525,7 @@ class DevicesPage(ttk.Frame):
         popup.configure(bg=BG)
         popup.transient(self)
         popup.resizable(False, False)
+        a11y.bind_escape_closes(popup)
         self._key_popup = popup
 
         tk.Label(popup, text="Scan this with ProtBot on your phone",
@@ -630,6 +632,7 @@ class DevicesPage(ttk.Frame):
         dialog.transient(self)
         dialog.resizable(False, False)
         dialog.grab_set()
+        a11y.bind_escape_closes(dialog)
 
         tk.Label(dialog, text="Enter the 8-character code from the other device:",
                  bg=BG, fg=TEXT2, font=('Segoe UI', 9),

@@ -20,6 +20,18 @@ any of it. The first entry under a real version number will be written when
 
 ### Added
 
+- **Keyboard navigation and a high-contrast mode** (AUDIT ST-06). Every
+  dialog closes on Escape; every scrollable area is reachable by Tab, which
+  Tk does not do by default for the Canvas widgets three of the six tabs use
+  for it; a visible focus ring on every control, applied once, application-
+  wide (`ui/a11y.py`), rather than per widget. A second colour palette
+  (`ui/theme.py`), checked against the real WCAG contrast formula rather
+  than by eye, behind a Settings toggle — takes effect on next launch, not
+  live, because Tk has no way to re-theme a window already built. Full
+  screen-reader support is not part of this: Tk does not implement the
+  Windows accessibility APIs a screen reader needs, and closing that gap for
+  real would mean a different GUI toolkit or native interop this project has
+  no way to verify — see `ui/a11y.py` and `STATUS.md`.
 - **Linking a phone to a PC by QR code.** The PC shows a code, the phone scans
   it, and the two join a sync group. The eight characters stay on screen beside
   it, because a camera that will not focus is a bad reason to be unable to link

@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 722 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 782 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -54,12 +54,7 @@ one, so the stock-camera path is complete. What is missing is scanning from
 *inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
 machine with no Android SDK.
 
-### 3. Finish the accessibility work (AUDIT ST-06 remainder)
-DPI awareness and font sizes are done. Still missing: keyboard navigation,
-screen-reader labelling, a high-contrast mode. The EU Accessibility Act has
-applied to consumer software since June 2025.
-
-### 4. Generate an SBOM, for the EU Cyber Resilience Act
+### 3. Generate an SBOM, for the EU Cyber Resilience Act
 Regulation (EU) 2024/2847 applies to products with digital elements sold in the
 EU. Vulnerability-reporting obligations begin **11 September 2026**; full
 application **11 December 2027**. Partly covered already — `SECURITY.md` is the
@@ -67,29 +62,29 @@ vulnerability policy, `pip-audit` runs in CI, dependencies are hash-pinned.
 Missing is the bill of materials; `cyclonedx-py` over the lockfile in a CI job
 is most of it.
 
-### 5. Build the Android app for real
+### 4. Build the Android app for real
 The shared rules compile and pass 115 tests. `android/app/` has never been
 compiled, because this machine has no Android SDK. Until someone runs
 `gradle :app:assembleDebug`, the Android half is source code rather than
 software.
 
-### 6. Write the Android screens
+### 5. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
 and tested.
 
-### 7. Let people link apps across devices by hand
+### 6. Let people link apps across devices by hand
 `syncproto.canonical_app_key` joins the same app on two devices by normalising
 its name — a good guess, not a guarantee. A package named after its vendor
 rather than its product will not meet the desktop executable. A small screen
 saying "these two are the same app" closes it. Nothing depends on it: an
 unmatched app simply counts per-device.
 
-### 8. Make it an installable package (AUDIT ST-04 remainder)
+### 7. Make it an installable package (AUDIT ST-04 remainder)
 `main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
 drops the hack and simplifies the PyInstaller spec.
 
-### 9. The remaining roadmap features
+### 8. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -136,6 +131,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **Atomic config writes, thread locking, storage hardening** | A crash mid-write used to truncate the config and reset every setting. |
 | **Rotating logs** | And a log the user can delete, because it is a plaintext record of every app opened. |
 | **DPI awareness** | The UI is no longer bitmap-stretched on any display above 100% scaling. |
+| **Keyboard navigation and a high-contrast mode (AUDIT ST-06)** | Every dialog closes on Escape; a Canvas used for scrolling — three of them, one per page — is reachable by Tab, which Tk does not do by default; the app's one click-only control (an ad banner, currently unused — `_ADS` is empty) responds to Enter/Space too. A visible focus ring on every focusable control, in both palettes: `ui/a11y.py` sets it once, application-wide, rather than per widget. `ui/theme.py` adds a second, WCAG AA-verified palette (`tests/test_theme.py` checks the actual contrast ratio, not by eye) behind a Settings toggle — restart-required, said plainly, because Tk cannot re-theme a window already on screen. What this does not do, and says so in `ui/a11y.py`: full screen-reader support. Tk does not implement MSAA or UI Automation for the widgets it draws, so NVDA or Narrator would see an unlabelled pane, not a button — closing that gap for real means a different GUI toolkit or unverifiable native interop, not a Settings screen. |
 | **Crash handling** | Unhandled exceptions on the main thread, background threads and Tk callbacks all reach the log. A frozen build has no console, so a dead monitor thread used to mean limits silently stopped being enforced while the window looked fine. |
 | **A ctypes tray icon** | Replaced pystray, which dropped the LGPL-3.0 §4 obligations that are awkward to satisfy in a frozen build. |
 
@@ -200,6 +196,12 @@ Recorded so nobody rediscovers them as bugs.
   device group and can read its totals. Five minutes, single use, and the
   dialog says so.
 - **The Android app has never been compiled.** The shared rules have.
+- **No screen-reader support.** Every control is keyboard-operable and has a
+  visible focus ring; naming those controls to NVDA or Narrator would need
+  MSAA/UI Automation, which Tk does not implement and this project has no
+  way to build or test blind. See `ui/a11y.py`.
+- **High-contrast mode takes a restart.** Tk bakes a colour into a widget at
+  the moment it is built; there is no live "re-theme everything on screen."
 - **The changelog has no released version.** Nothing has shipped. A test fails
   if that claim stops being true without a version being added.
 

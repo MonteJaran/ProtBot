@@ -6,15 +6,12 @@ Refreshed only when the tab is selected, so scroll position is never lost.
 import tkinter as tk
 from tkinter import ttk
 
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
+from ui import a11y
+# See ui/theme.py's docstring: the canonical definitions, and the
+# high-contrast alternative (AUDIT ST-06), live there. GOLD/PURPLE/CYAN are
+# this page's own for normal mode, unified in high-contrast mode only.
+from ui.theme import BG, BG2, BG3, ACCENT, TEXT, TEXT2, SUCCESS, WARNING, ERROR
+
 GOLD    = '#f59e0b'
 PURPLE  = '#8b5cf6'
 CYAN    = '#06b6d4'
@@ -88,6 +85,19 @@ class InsightsPage(ttk.Frame):
             lambda e: self._canvas.itemconfig(self._win_id, width=e.width))
         self._canvas.bind_all('<MouseWheel>',
             lambda e: self._canvas.yview_scroll(-(e.delta // 120), 'units'))
+
+        # Keyboard scroll (AUDIT ST-06) — this canvas had none at all before:
+        # no key bindings, and Tk does not make a Canvas tab-focusable by
+        # default, so a keyboard-only user could not scroll this tab past
+        # whatever fit on screen.
+        a11y.focus_scrollable(self._canvas, self.config)
+        self._canvas.bind('<Button-1>', lambda e: self._canvas.focus_set())
+        self._canvas.bind('<Up>',    lambda e: self._canvas.yview_scroll(-1, 'units'))
+        self._canvas.bind('<Down>',  lambda e: self._canvas.yview_scroll(1, 'units'))
+        self._canvas.bind('<Prior>', lambda e: self._canvas.yview_scroll(-5, 'units'))
+        self._canvas.bind('<Next>',  lambda e: self._canvas.yview_scroll(5, 'units'))
+        self._canvas.bind('<Home>',  lambda e: self._canvas.yview_moveto(0))
+        self._canvas.bind('<End>',   lambda e: self._canvas.yview_moveto(1))
 
     # ── Public refresh (called on tab-select only) ────────────────────────────
 
