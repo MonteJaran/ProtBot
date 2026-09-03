@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 782 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 788 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -54,37 +54,29 @@ one, so the stock-camera path is complete. What is missing is scanning from
 *inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
 machine with no Android SDK.
 
-### 3. Generate an SBOM, for the EU Cyber Resilience Act
-Regulation (EU) 2024/2847 applies to products with digital elements sold in the
-EU. Vulnerability-reporting obligations begin **11 September 2026**; full
-application **11 December 2027**. Partly covered already — `SECURITY.md` is the
-vulnerability policy, `pip-audit` runs in CI, dependencies are hash-pinned.
-Missing is the bill of materials; `cyclonedx-py` over the lockfile in a CI job
-is most of it.
-
-### 4. Build the Android app for real
+### 3. Build the Android app for real
 The shared rules compile and pass 115 tests. `android/app/` has never been
 compiled, because this machine has no Android SDK. Until someone runs
 `gradle :app:assembleDebug`, the Android half is source code rather than
 software.
 
-### 5. Write the Android screens
+### 4. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
 and tested.
 
-### 6. Let people link apps across devices by hand
+### 5. Let people link apps across devices by hand
 `syncproto.canonical_app_key` joins the same app on two devices by normalising
 its name — a good guess, not a guarantee. A package named after its vendor
 rather than its product will not meet the desktop executable. A small screen
 saying "these two are the same app" closes it. Nothing depends on it: an
 unmatched app simply counts per-device.
 
-### 7. Make it an installable package (AUDIT ST-04 remainder)
+### 6. Make it an installable package (AUDIT ST-04 remainder)
 `main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
 drops the hack and simplifies the PyInstaller spec.
 
-### 8. The remaining roadmap features
+### 7. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -164,9 +156,10 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **813 tests** | 698 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
+| **903 tests** | 788 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. (This row is not itself test-enforced the way the "Where things stand" count above is — caught stale once already; if it drifts again, trust the header.) |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
+| **A software bill of materials, in CI** | `cyclonedx-py` over `requirements.lock`, published as a build artifact on every push. For the EU Cyber Resilience Act — vulnerability-reporting obligations begin 11 September 2026. `tests/test_sbom.py` checks the generated SBOM actually lists every pinned dependency at its pinned version, not just that the command exits 0. |
 | **Renamed to ProtBot** | Including the data directory, with a migration that never overwrites newer data and never deletes the old folder if the move fails. |
 | **Signed, machine-bound licence gate** | 14-day offline grace. Server errors never revoke; only an explicit refusal does. |
 | **A real distribution** | PyInstaller spec, Inno installer, working uninstaller. Never run — see above. |
