@@ -34,6 +34,24 @@ building one.
 device's own last upload. Clients subtract their own contribution before
 merging; see syncproto.merge_app_total for why that is not the same as taking
 the larger of the two numbers.
+
+  4. **`id` names a device; `tok` authenticates the request.** AUDIT SF-09:
+     an earlier draft of this protocol used `device_id` alone as the
+     credential on every request, and it travels in request bodies (and, in
+     one client that predated this file, a URL path) where it lands in
+     server and proxy logs — anyone who obtains one can read and pollute
+     that device's data. `RegisterResp.tok` is a second, higher-entropy
+     secret returned once, at registration, and never again. Every request
+     after that MUST carry it as `Authorization: Bearer <tok>` and the
+     server MUST reject (401) a request whose token does not match the `d`
+     it claims — a bare device id in a body or path is no longer sufficient
+     on its own. `/link/new` and `/link/join` need it too, and the audit's
+     other half of this finding — rate-limiting the link-code endpoint —
+     is still open; nothing in the client can substitute for that.
+     Both clients (`core/syncclient.py`, `android/app/.../SyncClient.kt`)
+     send this header on every authenticated request once they hold a
+     token; this file records the contract they were built against; the
+     server that checks it does not exist yet — see STATUS.md.
 """
 
 from pydantic import BaseModel
@@ -44,9 +62,11 @@ from pydantic import BaseModel
 class RegisterReq(BaseModel):
     e: str | None = None   # email — discarded immediately after response
     n: str | None = None   # device label, shown only in the user's device list
+    p: str | None = None   # platform ("Windows", "Android"), for the device list's icon
 
 class RegisterResp(BaseModel):
     id: str                   # 24-char device_id
+    tok: str                  # secret bearer token — returned once, store it, never send it back
 
 
 # ── App list sync (sent once, or when tracked apps change) ────────────────────
@@ -83,6 +103,12 @@ class SyncResp(BaseModel):
 
 
 # ── Device linking ────────────────────────────────────────────────────────────
+#
+# /link/new and /link/join both require the Authorization header like every
+# other endpoint below this point — the `d` field they carry is which device
+# the request is about, not proof of who is asking. See note 4 above. The
+# audit's fix also calls for rate-limiting /link/new and /link/join: an
+# 8-character key is guessable in bulk without one, however short its life.
 
 class LinkNewResp(BaseModel):
     k: str                    # 8-char key, valid 5 minutes
@@ -94,6 +120,23 @@ class LinkJoinReq(BaseModel):
 class LinkJoinResp(BaseModel):
     ok: int = 1
     grp: str                  # shared group id
+
+
+# ── Group device list (Devices tab) ───────────────────────────────────────────
+#
+# GET /group, Authorization header only — no device id in the request at all,
+# path or body. The token alone says which group to list, which is the point:
+# nothing here is a wider fix for the same class of bug SF-09 names elsewhere.
+
+class GroupDevice(BaseModel):
+    id: str
+    name: str | None = None
+    platform: str | None = None       # "Windows" / "Android", for the icon
+    seen: int | None = None           # unix timestamp, last successful /sync
+    isOwn: bool = False
+
+class GroupResp(BaseModel):
+    devices: list[GroupDevice]
 
 
 # ── Global anonymous stats ────────────────────────────────────────────────────

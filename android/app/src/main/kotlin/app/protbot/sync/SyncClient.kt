@@ -33,6 +33,11 @@ import org.json.JSONObject
  * `server/models.py`, and the client is tested against a fake [Transport], so
  * what is verified is how it behaves on every response shape — including the
  * ones a broken server would send.
+ *
+ * Every request after [register] carries this device's bearer token — see
+ * [deviceToken] and `server/models.py` note 4 (AUDIT SF-09). The device id
+ * alone was never meant to prove anything; it is what a request is *about*,
+ * not who is asking.
  */
 class SyncClient(
     context: Context,
@@ -66,6 +71,9 @@ class SyncClient(
     private var uploadedDate: String = ""
 
     val deviceId: String get() = prefs.getString(KEY_DEVICE_ID, "").orEmpty()
+
+    /** The bearer token from registration — the credential itself; see AUDIT SF-09. */
+    val deviceToken: String get() = prefs.getString(KEY_DEVICE_TOKEN, "").orEmpty()
 
     val enabled: Boolean get() = deviceId.isNotEmpty()
 
@@ -129,6 +137,8 @@ class SyncClient(
         val today = Sync.localDate(now)
         val localTotals = localTotalsByServerId(now.toLocalDate())
 
+        val token = deviceToken
+
         if (localTotals.isNotEmpty()) {
             val payload = JSONObject().apply {
                 put("d", deviceId)
@@ -140,14 +150,14 @@ class SyncClient(
             // that never landed would make the merge subtract a contribution
             // the group total does not contain, and this device's own minutes
             // would go missing from the shared limit.
-            transport.post(ENDPOINT_UPLOAD, payload) ?: return false
+            transport.post(ENDPOINT_UPLOAD, payload, token) ?: return false
             synchronized(this) {
                 uploaded = localTotals
                 uploadedDate = today
             }
         }
 
-        val response = transport.post(ENDPOINT_SYNC, JSONObject().put("d", deviceId))
+        val response = transport.post(ENDPOINT_SYNC, JSONObject().put("d", deviceId), token)
             ?: return false
 
         val totals = parseSync(response)
@@ -175,14 +185,23 @@ class SyncClient(
      * phone before it.
      */
     suspend fun register(deviceName: String, email: String = ""): String {
-        val payload = JSONObject().put("n", deviceName)
+        val payload = JSONObject().put("n", deviceName).put("p", "Android")
         if (email.isNotBlank()) payload.put("e", email)
 
         val response = transport.post(ENDPOINT_REGISTER, payload) ?: return ""
         val id = response.optString("id").orEmpty().trim()
         if (id.isEmpty()) return ""
 
-        prefs.edit().putString(KEY_DEVICE_ID, id).apply()
+        // A response with an id but no token is a failed registration, not a
+        // partial one — continuing without it would silently fall back to
+        // sending every later request unauthenticated. See AUDIT SF-09.
+        val token = response.optString("tok").orEmpty().trim()
+        if (token.isEmpty()) return ""
+
+        prefs.edit()
+            .putString(KEY_DEVICE_ID, id)
+            .putString(KEY_DEVICE_TOKEN, token)
+            .apply()
         return id
     }
 
@@ -191,11 +210,17 @@ class SyncClient(
      *
      * Clearing the device id alone would leave the app quiet but still holding
      * the identifier tying this phone to data on the server, and the stale
-     * app-id mapping would be wrong if the user registered again.
+     * app-id mapping would be wrong if the user registered again. The token
+     * goes for the same reason, and because it is the credential (SF-09):
+     * there is no purpose left for it once sync is off.
      */
     @Synchronized
     fun unregister() {
-        prefs.edit().remove(KEY_DEVICE_ID).remove(KEY_APP_IDS).apply()
+        prefs.edit()
+            .remove(KEY_DEVICE_ID)
+            .remove(KEY_DEVICE_TOKEN)
+            .remove(KEY_APP_IDS)
+            .apply()
         groupTotals = emptyMap()
         groupFetchedAt = 0L
         groupDate = ""
@@ -229,6 +254,7 @@ class SyncClient(
         val response = transport.post(
             ENDPOINT_APPS,
             JSONObject().put("d", deviceId).put("a", JSONArray(entries)),
+            deviceToken,
         ) ?: return
 
         val mapping = response.optJSONObject("m") ?: return
@@ -314,6 +340,7 @@ class SyncClient(
         const val ENDPOINT_SYNC = "/sync"
 
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_DEVICE_TOKEN = "device_token"
         private const val KEY_APP_IDS = "server_app_ids"
     }
 }

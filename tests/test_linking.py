@@ -296,6 +296,130 @@ class TestJoiningALink:
         assert transport.requests == []
 
 
+class TestListingTheGroup:
+
+    def test_it_refuses_before_the_device_is_registered(self, config):
+        with pytest.raises(LinkError, match="Register this device"):
+            linking.list_group(config, transport=FakeTransport())
+
+    def test_no_device_id_travels_in_the_request(self, config):
+        # AUDIT SF-09: the token is the credential, not the device id — this
+        # endpoint does not even carry one, in a path or a body.
+        config.set("device_id", "phone-xyz")
+        transport = FakeTransport({"/group": {"devices": []}})
+        linking.list_group(config, transport=transport)
+
+        path, payload = transport.requests[0]
+        assert path == "/group"
+        assert "phone-xyz" not in str(payload)
+        assert "d" not in payload
+
+    def test_the_devices_come_back(self, config):
+        config.set("device_id", "phone-xyz")
+        transport = FakeTransport({"/group": {"devices": [
+            {"id": "phone-xyz", "name": "My Phone", "platform": "Android",
+             "seen": 100, "isOwn": True},
+            {"id": "pc-1", "name": "Work PC", "platform": "Windows",
+             "seen": 200, "isOwn": False},
+        ]}})
+
+        devices = linking.list_group(config, transport=transport)
+        assert [d["id"] for d in devices] == ["phone-xyz", "pc-1"]
+        assert devices[1]["name"] == "Work PC"
+        assert devices[1]["isOwn"] is False
+
+    def test_an_unreachable_server_says_so(self, config):
+        config.set("device_id", "phone-xyz")
+        with pytest.raises(LinkError, match="Could not reach"):
+            linking.list_group(config, transport=FakeTransport({"/group": None}))
+
+
+class TestParsingTheGroupResponse:
+    """parse_group directly: hostile input, one bad row must not cost the rest."""
+
+    def test_not_a_dict_is_an_empty_list(self):
+        for payload in [None, "devices", 42, []]:
+            assert linking.parse_group(payload) == []
+
+    def test_devices_missing_or_wrong_shaped_is_an_empty_list(self):
+        for payload in [{}, {"devices": "nope"}, {"devices": {}}]:
+            assert linking.parse_group(payload) == []
+
+    def test_an_entry_with_no_id_is_skipped_not_fatal(self):
+        devices = linking.parse_group({"devices": [
+            {"name": "No id here"},
+            {"id": "ok-1"},
+        ]})
+        assert [d["id"] for d in devices] == ["ok-1"]
+
+    def test_missing_fields_default_rather_than_raise(self):
+        devices = linking.parse_group({"devices": [{"id": "bare"}]})
+        assert devices == [{"id": "bare", "name": "", "platform": "",
+                            "seen": None, "isOwn": False}]
+
+    def test_a_hostile_server_cannot_flood_the_device_list(self):
+        huge = {"devices": [{"id": str(i)} for i in range(10_000)]}
+        assert len(linking.parse_group(huge)) == linking.MAX_GROUP_DEVICES
+
+
+class TestRequestsCarryThisDevicesToken:
+    """
+    One layer above TestTheTransportSendsTheBearerToken in test_sync.py: this
+    is linking.py handing its token to the Transport it builds, not the
+    header the Transport then produces from it.
+    """
+
+    class _SpyTransport:
+        """Stands in for syncclient.Transport and records how it was built."""
+        last_base_url = None
+        last_token = None
+
+        def __init__(self, base_url, timeout=10, token=""):
+            type(self).last_base_url = base_url
+            type(self).last_token = token
+
+        def post(self, path, payload):
+            return {"k": KEY, "ok": 1, "grp": "g1", "devices": []}
+
+    def test_request_link_uses_this_devices_stored_token(self, config, monkeypatch):
+        from core import syncclient
+
+        monkeypatch.setattr(syncclient, "Transport", self._SpyTransport)
+        config.set("device_id", "device-abc")
+        config.set("device_token", "secret-tok")
+
+        linking.request_link(config)
+        assert self._SpyTransport.last_token == "secret-tok"
+
+    def test_join_link_uses_this_devices_stored_token(self, config, monkeypatch):
+        from core import syncclient
+
+        monkeypatch.setattr(syncclient, "Transport", self._SpyTransport)
+        config.set("device_id", "device-abc")
+        config.set("device_token", "secret-tok")
+
+        linking.join_link(config, KEY)
+        assert self._SpyTransport.last_token == "secret-tok"
+
+    def test_list_group_uses_this_devices_stored_token(self, config, monkeypatch):
+        from core import syncclient
+
+        monkeypatch.setattr(syncclient, "Transport", self._SpyTransport)
+        config.set("device_id", "device-abc")
+        config.set("device_token", "secret-tok")
+
+        linking.list_group(config)
+        assert self._SpyTransport.last_token == "secret-tok"
+
+    def test_an_explicit_transport_is_used_as_is(self, config):
+        # Every test above this one relies on this: passing a fake transport
+        # must skip token wiring entirely, not silently ignore the fake.
+        config.set("device_id", "device-abc")
+        transport = FakeTransport({"/link/new": {"k": KEY}})
+        linking.request_link(config, transport=transport)
+        assert transport.requests[0][0] == "/link/new"
+
+
 # ── The two implementations must agree ────────────────────────────────────
 
 class TestTheKotlinSideMatches:

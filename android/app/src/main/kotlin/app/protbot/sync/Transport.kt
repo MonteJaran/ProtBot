@@ -13,9 +13,16 @@ import org.json.JSONObject
  * shape — timeout, 500, an HTML error page, valid JSON with the wrong types —
  * without a network or a server. `SyncClient` is written against this and
  * never sees a socket.
+ *
+ * `token` is this device's bearer token from registration (AUDIT SF-09; see
+ * `core/syncclient.py` and `server/models.py` note 4 on the desktop side) —
+ * a parameter rather than constructor state, so one Transport keeps working
+ * across a re-registration without SyncClient rebuilding it. Blank for
+ * [SyncClient.register] itself, which is how a token is obtained in the
+ * first place.
  */
 interface Transport {
-    suspend fun post(path: String, payload: JSONObject): JSONObject?
+    suspend fun post(path: String, payload: JSONObject, token: String = ""): JSONObject?
 }
 
 /**
@@ -33,7 +40,7 @@ class HttpTransport(
 
     private val baseUrl = baseUrl.trimEnd('/')
 
-    override suspend fun post(path: String, payload: JSONObject): JSONObject? =
+    override suspend fun post(path: String, payload: JSONObject, token: String): JSONObject? =
         withContext(Dispatchers.IO) {
             if (baseUrl.isEmpty()) return@withContext null
             // Usage data leaves the phone here. Plain http would put it on the
@@ -54,6 +61,11 @@ class HttpTransport(
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("User-Agent", userAgent)
+                    // Absent only for /register itself. See AUDIT SF-09: the
+                    // token, not the device id, is what proves this request.
+                    if (token.isNotBlank()) {
+                        setRequestProperty("Authorization", "Bearer $token")
+                    }
                 }
 
                 connection.outputStream.use { it.write(payload.toString().toByteArray()) }

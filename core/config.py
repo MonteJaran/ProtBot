@@ -50,6 +50,9 @@ DEFAULT_CONFIG: dict = {
     "consent_at": "",
     # Device & plan
     "device_id": "",               # 24-char server-assigned ID
+    # The sync bearer token from registration — the actual credential from
+    # here on, not the device id. See AUDIT SF-09 and server/models.py note 4.
+    "device_token": "",
     "server_url": "https://api-tk3y3h4s3q-uc.a.run.app",  # Firebase Cloud Functions
     # Entitlement is NOT stored here as a plain value any more: that made it a
     # one-word edit in a text file. It lives under "entitlement", signed, and

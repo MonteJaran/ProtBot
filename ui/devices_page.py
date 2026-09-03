@@ -8,7 +8,6 @@ Sections
 3. Your Plan     — freemium vs premium feature comparison + upgrade CTA
 """
 
-import json
 import threading
 import tkinter as tk
 import webbrowser
@@ -18,11 +17,6 @@ from core import licensing
 from core.logging_setup import get_logger
 
 log = get_logger("devices")
-
-try:
-    from urllib.request import urlopen, Request
-except ImportError:
-    urlopen = None
 
 # ── Colour palette (matches app.py) ──────────────────────────────────────────
 BG      = '#1a1a2e'
@@ -77,24 +71,6 @@ _PLANNED_FEATURES = [
     "Team challenges & leaderboards",
     "Priority support",
 ]
-
-
-def _api(config, method: str, path: str, body: dict = None):
-    """
-    Minimal synchronous API call to the Firebase Cloud Functions endpoint.
-    Returns (status_code, response_dict) or raises URLError / HTTPError.
-    """
-    base = (config.get("server_url") or "").rstrip("/")
-    if not base:
-        raise ValueError("Server URL not configured — go to Settings.")
-
-    url  = f"{base}/{path.lstrip('/')}"
-    data = json.dumps(body).encode() if body else None
-    headers = {"Content-Type": "application/json"}
-
-    req  = Request(url, data=data, headers=headers, method=method)
-    with urlopen(req, timeout=10) as resp:
-        return resp.status, json.loads(resp.read().decode())
 
 
 class DevicesPage(ttk.Frame):
@@ -457,22 +433,22 @@ class DevicesPage(ttk.Frame):
         self._reg_timeout_id = self.after(12000, _timeout)
 
         def _do():
-            try:
-                import socket
-                hostname = socket.gethostname() or "Windows PC"
-                body = {"n": hostname, "p": "Windows"}
-                if email:
-                    body["e"] = email
-                _, resp = _api(self.config, "POST", "/r", body)
-                dev_id = resp.get("id", "")
-                if not dev_id:
-                    raise ValueError("No ID returned from server.")
-                self.config.set("device_id", dev_id)
+            import socket
+
+            from core import syncclient
+
+            hostname = socket.gethostname() or "Windows PC"
+            # The same registration this device's sync client would perform
+            # itself, rather than a second implementation of it — id *and*
+            # bearer token (AUDIT SF-09) both land in config from one call.
+            dev_id = syncclient.register_device(
+                self.config, device_name=hostname, email=email,
+                platform="Windows")
+            if dev_id:
                 self.after(0, lambda: self._reg_done(dev_id))
-            except Exception as exc:
-                # Bind the value into the lambda: `exc` is deleted when the
-                # except block exits, but this runs later on the Tk thread.
-                self.after(0, lambda e=exc: self._reg_error(str(e)))
+            else:
+                self.after(0, lambda: self._reg_error(
+                    "Could not reach the server, or it refused the request."))
 
         threading.Thread(target=_do, daemon=True).start()
 
@@ -506,11 +482,12 @@ class DevicesPage(ttk.Frame):
             return
 
         def _do():
+            from core import linking
+
             try:
-                _, resp = _api(self.config, "POST", "/link/new", {"d": dev_id})
-                key = resp.get("k", "")
-                self.after(0, lambda: self._show_link_key(key))
-            except Exception as exc:
+                session = linking.request_link(self.config)
+                self.after(0, lambda: self._show_link_key(session))
+            except linking.LinkError as exc:
                 self.after(0, lambda e=exc: messagebox.showerror(
                     "Error", str(e), parent=self))
 
@@ -524,26 +501,20 @@ class DevicesPage(ttk.Frame):
     QR_MODULE_PX = 7
     QR_QUIET_MODULES = 4
 
-    def _show_link_key(self, key: str):
+    def _show_link_key(self, session):
         """
         The link code, as a QR to scan and as characters to type.
 
         Both, always. The QR is the fast path, and a camera that will not focus
         is a bad reason to be unable to link a device — so the characters stay
         on screen next to it rather than behind a "having trouble?" link.
-        """
-        from core import linking
 
+        Takes an already-built linking.LinkSession: request_link() either
+        returns one it has already validated, or raises before this is ever
+        called, so there is nothing left here to fail on.
+        """
         if self._link_countdown[0]:
             self.after_cancel(self._link_countdown[0])
-
-        try:
-            session = linking.LinkSession(key)
-        except linking.LinkError as exc:
-            # A code that cannot be encoded must not be drawn: the user would
-            # scan it, and it would fail on the phone instead of here.
-            messagebox.showerror("Link failed", str(exc), parent=self)
-            return
 
         if hasattr(self, '_key_popup') and self._key_popup.winfo_exists():
             self._key_popup.destroy()
@@ -682,12 +653,12 @@ class DevicesPage(ttk.Frame):
             status_lbl.config(text="Joining...", fg=TEXT2)
 
             def _do():
+                from core import linking
+
                 try:
-                    _, resp = _api(self.config, "POST", "/link/join",
-                                   {"d": dev_id, "k": code})
-                    grp = resp.get("grp", "")
+                    grp = linking.join_link(self.config, code)
                     self.after(0, lambda: self._join_done(dialog, grp))
-                except Exception as exc:
+                except linking.LinkError as exc:
                     self.after(0, lambda e=exc: status_lbl.config(
                         text=f"Error: {e}", fg=ERROR))
 
@@ -715,8 +686,12 @@ class DevicesPage(ttk.Frame):
             return
 
         def _fetch():
+            from core import linking
+
             try:
-                _, data = _api(self.config, "GET", f"/group/{dev_id}")
+                # No device id in this request at all, path or body — see
+                # linking.list_group and AUDIT SF-09.
+                devices = linking.list_group(self.config)
                 others = [
                     {
                         "id":        d["id"],
@@ -724,12 +699,13 @@ class DevicesPage(ttk.Frame):
                         "platform":  d.get("platform") or "Unknown",
                         "last_seen": _fmt_seen(d.get("seen")),
                     }
-                    for d in data.get("devices", [])
+                    for d in devices
                     if not d.get("isOwn", False)
                 ]
                 self.config.set("linked_devices", others)
-                self.after(0, self._populate)
-            except Exception:
+            except linking.LinkError:
+                pass
+            finally:
                 self.after(0, self._populate)
 
         threading.Thread(target=_fetch, daemon=True).start()

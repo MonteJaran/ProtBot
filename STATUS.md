@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 698 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 722 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -15,7 +15,7 @@ has ever been built, nobody has ever installed it, and almost everything now
 standing between here and a first release is a decision or an account rather
 than a commit.
 
-*Last updated 2026-08-29.*
+*Last updated 2026-09-03.*
 
 ---
 
@@ -31,7 +31,7 @@ than a commit.
 | 6 | **Confirm the licence** | Free, effectively one-way | `LICENSE` states the all-rights-reserved default explicitly, which is right for something you intend to sell and keeps every option open. Open source instead is a deliberate, irreversible decision — a permissive licence cannot be recalled from copies people already hold. |
 | 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | An evening now, far cheaper than after a store listing is built on the name. |
 | 8 | **Get the server source into git** | An afternoon | `server/` holds request models and nothing else. The deployed function that holds user emails is unversioned, unreviewed and unbacked-up. Everything below that touches the server waits on this. |
-| 9 | **Build the sync server** — `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join` | A day, after #8 | Both clients are written and tested against a fake transport; there is nothing between them. `server/models.py` defines the wire format and spells out the three things a server must get right: cumulative totals, the client's own date, and matching on the canonical key. Until it exists the phone and the PC each count their own time, and QR linking has nothing to talk to. |
+| 9 | **Build the sync server** — `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join`, `/group` | A day, after #8 | Both clients are written and tested against a fake transport; there is nothing between them. `server/models.py` defines the wire format and spells out four things a server must get right: cumulative totals, the client's own date, matching on the canonical key, and — since both clients now send one — actually checking the bearer token against the `d` a request claims (note 4; AUDIT SF-09). Until it exists the phone and the PC each count their own time, QR linking has nothing to talk to, and nothing enforces the auth the clients already send. |
 | 10 | **Build `/license/verify`** | A morning, after #8 | The client calls it and already handles every failure mode — offline grace, refusal, server error. The endpoint does not exist. |
 | 11 | **Sign up a merchant of record** | ~5% of revenue | Paddle or Lemon Squeezy. The licence gate is built and there is nothing to sell keys with. Both handle EU VAT, which is the part you do not want to own. |
 | 12 | **Lawyer: review `PRIVACY.md`, write terms and a EULA** | A few hundred € | The policy is accurate to the code — every claim in it is checked by a test — but was not written by a lawyer, and there are no terms and no EULA at all. Before any public release or any money changing hands. |
@@ -42,29 +42,24 @@ than a commit.
 
 Roughly in value order.
 
-### 1. Authenticate the sync API (AUDIT SF-09)
-The device ID *is* the credential and it travels in the URL path, where it
-lands in server and proxy logs. Anyone holding or guessing one can read that
-user's data. Client plumbing is a day; the server half waits on #8 above.
-
-### 2. Publish `assetlinks.json` on protbot.app
+### 1. Publish `assetlinks.json` on protbot.app
 The Android manifest declares `autoVerify="true"` for the device-link URL.
 Without the assetlinks file served from the domain, Android shows a chooser
 instead of opening ProtBot directly — it still works, it is one tap worse.
 Waits on #4 above.
 
-### 3. The in-app QR scanner
+### 2. The in-app QR scanner
 `Linking.parsePayload` reads a scanned code and the manifest opens the app from
 one, so the stock-camera path is complete. What is missing is scanning from
 *inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
 machine with no Android SDK.
 
-### 4. Finish the accessibility work (AUDIT ST-06 remainder)
+### 3. Finish the accessibility work (AUDIT ST-06 remainder)
 DPI awareness and font sizes are done. Still missing: keyboard navigation,
 screen-reader labelling, a high-contrast mode. The EU Accessibility Act has
 applied to consumer software since June 2025.
 
-### 5. Generate an SBOM, for the EU Cyber Resilience Act
+### 4. Generate an SBOM, for the EU Cyber Resilience Act
 Regulation (EU) 2024/2847 applies to products with digital elements sold in the
 EU. Vulnerability-reporting obligations begin **11 September 2026**; full
 application **11 December 2027**. Partly covered already — `SECURITY.md` is the
@@ -72,29 +67,29 @@ vulnerability policy, `pip-audit` runs in CI, dependencies are hash-pinned.
 Missing is the bill of materials; `cyclonedx-py` over the lockfile in a CI job
 is most of it.
 
-### 6. Build the Android app for real
+### 5. Build the Android app for real
 The shared rules compile and pass 115 tests. `android/app/` has never been
 compiled, because this machine has no Android SDK. Until someone runs
 `gradle :app:assembleDebug`, the Android half is source code rather than
 software.
 
-### 7. Write the Android screens
+### 6. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
 and tested.
 
-### 8. Let people link apps across devices by hand
+### 7. Let people link apps across devices by hand
 `syncproto.canonical_app_key` joins the same app on two devices by normalising
 its name — a good guess, not a guarantee. A package named after its vendor
 rather than its product will not meet the desktop executable. A small screen
 saying "these two are the same app" closes it. Nothing depends on it: an
 unmatched app simply counts per-device.
 
-### 9. Make it an installable package (AUDIT ST-04 remainder)
+### 8. Make it an installable package (AUDIT ST-04 remainder)
 `main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
 drops the hack and simplifies the PyInstaller spec.
 
-### 10. The remaining roadmap features
+### 9. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -152,6 +147,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **Cross-device sync** | A two-hour limit means two hours across both devices, not two hours each. Uploads are cumulative so a retry cannot double-count; the day is the client's day; merging subtracts this device's own stale contribution rather than taking the larger number. |
 | **QR device linking** | The PC shows a code, the phone scans it. The key travels in the URL fragment, which never reaches a web server. An https App Link, not a custom scheme, so the stock camera can open it. The characters stay on screen beside the code as a fallback. |
 | **A QR encoder** | `core/qrcode.py`, standard library only — byte mode, versions 1–10, all four error levels. Verified by reading generated symbols back with a real decoder, which caught two bugs that produced pixel-perfect unreadable codes. |
+| **The sync API is authenticated, client-side (AUDIT SF-09)** | Registration now returns a bearer token as well as a device id, and every client — desktop and the Android app's `SyncClient.kt` — sends it as `Authorization: Bearer <token>` on every request after; no device id travels in a URL path anywhere any more. `ui/devices_page.py` also turned out to be a *third*, older, unauthenticated implementation of registration and linking that never called the tested `core/syncclient.py` / `core/linking.py` it duplicated — including a `/r` endpoint that had drifted from the real `/register`, and a "cross-device rows" display in the Processes tab reading response fields no server contract ever defined. Both are now gone in favour of the one implementation; a new `core.linking.list_group()` lists the Devices tab's group with no device id in the request at all. What is not done: a server to check the token against — there still isn't one (see "Blocked on you" above), so this closes the client half of SF-09, not the finding. |
 
 ### Legal and compliance
 

@@ -318,8 +318,10 @@ class TestSyncIsOffUntilTheUserTurnsItOn:
         assert transport.requests == []
 
     def test_unregistering_forgets_the_mapping_too(self, config, synced):
+        config.set("device_token", "secret-tok")
         syncclient.unregister_device(config)
         assert config.get("device_id") == ""
+        assert config.get("device_token") == ""
         assert config.get("server_app_ids") == {}
 
 
@@ -425,6 +427,72 @@ class TestOneSyncCycle:
         assert syncclient.ENDPOINT_APPS in transport.paths()
 
 
+class TestAuthentication:
+    """
+    AUDIT SF-09: the device id was the whole credential, and it travelled
+    somewhere a server or proxy would log it. A token from registration, sent
+    as a header, is what makes a leaked device id alone useless.
+    """
+
+    def test_the_stored_token_is_armed_onto_the_transport_before_a_cycle(
+            self, db, config, synced):
+        config.set("device_token", "secret-tok")
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+
+        # FakeTransport does not build headers itself — this proves the
+        # client hands the token to whatever transport it holds, which is
+        # what the real Transport.post() then turns into the header. See
+        # TestTheTransportSendsTheBearerToken for the header itself.
+        assert transport.token == "secret-tok"
+
+    def test_no_stored_token_means_none_is_armed(self, db, config, synced):
+        # No registration has ever happened against the version of the
+        # server that hands one out — degrade to the same unauthenticated
+        # request rather than sending a garbage header.
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+        assert transport.token == ""
+
+    def test_a_changed_token_replaces_the_old_one_next_cycle(
+            self, db, config, synced):
+        # Re-registration can happen without restarting the process; the next
+        # cycle must not keep sending a token that is no longer valid.
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        client = SyncClient(db, config, transport=transport)
+
+        config.set("device_token", "first-tok")
+        client.sync_once()
+        assert transport.token == "first-tok"
+
+        config.set("device_token", "second-tok")
+        client.sync_once()
+        assert transport.token == "second-tok"
+
+    def test_status_reports_how_many_devices_are_in_the_group(
+            self, db, config, synced):
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {"42": 600}, "devices": 3},
+        })
+        client = SyncClient(db, config, transport=transport)
+        client.sync_once()
+        assert client.status()["devices"] == 3
+
+    def test_status_defaults_devices_to_zero_before_ever_syncing(
+            self, db, config):
+        assert SyncClient(db, config, transport=FakeTransport()).status()["devices"] == 0
+
+
 class TestStaleDataIsNotEnforcedAgainst:
 
     def test_a_figure_older_than_the_stale_window_is_dropped(self, db, config, synced):
@@ -465,20 +533,56 @@ class TestStaleDataIsNotEnforcedAgainst:
 class TestRegistration:
 
     def test_registering_stores_the_id_the_server_gave(self, config):
-        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        transport = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
         assert syncclient.register_device(config, "my-pc", transport=transport) == "abc123"
         assert config.get("device_id") == "abc123"
 
+    def test_registering_stores_the_token_too(self, config):
+        # AUDIT SF-09: the token, not the device id, is the credential from
+        # here on. Losing it on the way to config would silently leave every
+        # later request unauthenticated.
+        transport = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
+        syncclient.register_device(config, "my-pc", transport=transport)
+        assert config.get("device_token") == "secret-tok"
+
     def test_an_email_is_only_sent_when_typed(self, config):
-        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        transport = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
         syncclient.register_device(config, "my-pc", transport=transport)
         assert "e" not in transport.payload_for(syncclient.ENDPOINT_REGISTER)
 
-    @pytest.mark.parametrize("response", [None, {}, {"id": ""}, "not-json"])
+    def test_a_platform_is_only_sent_when_given(self, config):
+        without = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
+        syncclient.register_device(config, "my-pc", transport=without)
+        assert "p" not in without.payload_for(syncclient.ENDPOINT_REGISTER)
+
+        with_platform = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
+        syncclient.register_device(config, "my-pc", platform="Windows",
+                                   transport=with_platform)
+        assert with_platform.payload_for(syncclient.ENDPOINT_REGISTER)["p"] == "Windows"
+
+    @pytest.mark.parametrize("response", [
+        None, {}, "not-json",
+        {"id": ""},                        # no id at all
+        {"id": "abc123"},                  # id but no token — see below
+    ])
     def test_a_failed_registration_leaves_sync_off(self, config, response):
+        # A response with an id but no token is a failure too, not a partial
+        # success: continuing without a token would silently fall back to the
+        # unauthenticated behaviour this exists to close.
         transport = FakeTransport({syncclient.ENDPOINT_REGISTER: response})
         assert syncclient.register_device(config, "my-pc", transport=transport) == ""
         assert config.get("device_id") == ""
+        assert config.get("device_token") == ""
 
 
 class TestNothingUndisclosedLeavesTheMachine:
@@ -558,6 +662,72 @@ class TestTheTransportRefusesPlainHttp:
 
     def test_an_empty_url_sends_nothing(self):
         assert syncclient.Transport("").post("/upload", {"d": "x"}) is None
+
+
+class TestTheTransportSendsTheBearerToken:
+    """
+    One layer below TestAuthentication: this is the header actually landing
+    on the wire, not just the client handing a token to its transport.
+    """
+
+    class _FakeResponse:
+        def __init__(self, body: bytes):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, _n):
+            return self._body
+
+    def test_a_token_becomes_an_authorization_header(self, monkeypatch):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return self._FakeResponse(b"{}")
+
+        monkeypatch.setattr(syncclient.urllib.request, "urlopen", fake_urlopen)
+
+        transport = syncclient.Transport("https://example.com", token="secret-tok")
+        transport.post("/sync", {"d": "x"})
+
+        assert captured["request"].get_header("Authorization") == "Bearer secret-tok"
+
+    def test_no_token_means_no_authorization_header(self, monkeypatch):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return self._FakeResponse(b"{}")
+
+        monkeypatch.setattr(syncclient.urllib.request, "urlopen", fake_urlopen)
+
+        transport = syncclient.Transport("https://example.com")
+        transport.post("/sync", {"d": "x"})
+
+        assert captured["request"].get_header("Authorization") is None
+
+    def test_the_token_can_be_set_after_construction(self, monkeypatch):
+        # SyncClient reuses one Transport for its whole life and arms the
+        # token onto it fresh before each cycle rather than rebuilding it —
+        # this is the attribute that makes that possible.
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return self._FakeResponse(b"{}")
+
+        monkeypatch.setattr(syncclient.urllib.request, "urlopen", fake_urlopen)
+
+        transport = syncclient.Transport("https://example.com")
+        transport.token = "armed-later"
+        transport.post("/sync", {"d": "x"})
+
+        assert captured["request"].get_header("Authorization") == "Bearer armed-later"
 
 
 # ── The monitor's side ────────────────────────────────────────────────────

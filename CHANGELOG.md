@@ -100,3 +100,29 @@ any of it. The first entry under a real version number will be written when
   with a test that fails the build if one returns.
 - **The plan comparison advertised features that did not exist.** Removed, with
   a test that fails if an unimplemented feature is listed as included.
+- **Registering a device from the Devices tab silently used the wrong
+  endpoint.** `ui/devices_page.py` posted to `/r`; the rest of the app has
+  always meant `/register`. It was also a second, older, unauthenticated
+  implementation of registration and device linking that never called the
+  tested `core/syncclient.py` / `core/linking.py` it duplicated — now removed
+  in favour of the one implementation both use.
+- **The Processes tab's "cross-device" rows read server fields that were
+  never specified anywhere.** A leftover from before the sync protocol was
+  hardened, hit an unauthenticated `GET /sync/{device_id}` endpoint of its
+  own, and rendered names and per-device breakdowns `server/models.py`'s
+  `SyncResp` was never defined to return. Removed; the number it was trying
+  to show already reaches each app's usage total through the authenticated
+  sync client.
+
+### Security
+
+- **The sync API now authenticates its requests (AUDIT SF-09).** A device id
+  was the whole credential, and it travelled in places a plain identifier
+  should not have to be treated as one — a URL path, in one of the three
+  client implementations this turned out to have. Registration now also
+  returns a bearer token, sent as `Authorization: Bearer <token>` on every
+  request after; `/group` (the Devices tab's linked-device list) carries no
+  device id at all, in a path or a body — the token alone says whose group to
+  list. Both clients — desktop and the Android app's `SyncClient.kt` — do
+  this the same way. What this does not do: there is still no server to
+  check the token against (see `STATUS.md`).
