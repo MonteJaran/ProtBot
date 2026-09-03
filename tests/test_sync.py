@@ -216,6 +216,52 @@ class TestBuildUpload:
         assert payload == {}
 
 
+class TestManualKeyOverrides:
+    """
+    canonical_app_key is a best-effort guess (TestCanonicalAppKey above has
+    the case it cannot resolve: Firefox.exe vs org.mozilla.firefox). This is
+    the fallback — build_app_sync's half of it; core.syncclient's
+    set_manual_key/manual_key_for/clear_manual_key is the other half,
+    covered in TestMatchingAppsByHand below.
+    """
+
+    def test_an_override_replaces_the_computed_key(self):
+        payload = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Firefox.exe", "category": "Web"}],
+            overrides={1: "firefox"},
+        )
+        assert payload["a"] == [[1, "firefox", "Web"]]
+
+    def test_a_string_keyed_override_works_the_same_as_an_int_one(self):
+        # config.json round-trips int keys as strings; this must not care.
+        payload = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Firefox.exe"}],
+            overrides={"1": "firefox"},
+        )
+        assert payload["a"] == [[1, "firefox", ""]]
+
+    def test_apps_with_no_override_still_use_the_computed_key(self):
+        payload = syncproto.build_app_sync(
+            "dev123",
+            [{"id": 1, "name": "Firefox.exe"}, {"id": 2, "name": "Discord.exe"}],
+            overrides={1: "firefox"},
+        )
+        assert payload["a"] == [[1, "firefox", ""], [2, "discord", ""]]
+
+    def test_no_overrides_at_all_behaves_exactly_as_before(self):
+        apps = [{"id": 1, "name": "Discord.exe", "category": "Social"}]
+        assert (syncproto.build_app_sync("dev123", apps)
+                == syncproto.build_app_sync("dev123", apps, overrides=None)
+                == syncproto.build_app_sync("dev123", apps, overrides={}))
+
+    def test_an_override_for_an_unrelated_app_id_does_nothing(self):
+        payload = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Discord.exe"}],
+            overrides={999: "something-else"},
+        )
+        assert payload["a"] == [[1, "discord", ""]]
+
+
 # ── Hostile responses ─────────────────────────────────────────────────────
 
 class TestParsing:
@@ -491,6 +537,91 @@ class TestAuthentication:
     def test_status_defaults_devices_to_zero_before_ever_syncing(
             self, db, config):
         assert SyncClient(db, config, transport=FakeTransport()).status()["devices"] == 0
+
+
+class TestMatchingAppsByHand:
+    """
+    core.syncclient's half of the manual-key fallback — see
+    TestManualKeyOverrides above for build_app_sync's. STATUS.md:
+    canonical_app_key cannot resolve every pair (Firefox.exe never meets
+    org.mozilla.firefox on its own), and this is what closes that case —
+    letting the user say "these two are the same app" on both devices
+    rather than counting one app twice.
+    """
+
+    def test_no_override_by_default(self, config):
+        assert syncclient.manual_key_for(config, 1) == ""
+
+    def test_setting_one_makes_it_come_back(self, config):
+        syncclient.set_manual_key(config, 1, "firefox")
+        assert syncclient.manual_key_for(config, 1) == "firefox"
+
+    def test_it_is_normalised_the_same_way_canonical_app_key_normalises_everything(
+            self, config):
+        # What the caller sees back is exactly what has to match on the
+        # other device — not raw text that merely looks similar.
+        stored = syncclient.set_manual_key(config, 1, "  Firefox.EXE  ")
+        assert stored == "firefox"
+        assert syncclient.manual_key_for(config, 1) == "firefox"
+
+    def test_setting_it_to_noise_only_text_clears_it_instead(self, config):
+        # An empty key is not "no override" — it is the one string every
+        # other unresolved app would also collide on. See canonical_app_key.
+        syncclient.set_manual_key(config, 1, "firefox")
+        stored = syncclient.set_manual_key(config, 1, "   !!!   ")
+        assert stored == ""
+        assert syncclient.manual_key_for(config, 1) == ""
+
+    def test_clear_manual_key_goes_back_to_automatic(self, config):
+        syncclient.set_manual_key(config, 1, "firefox")
+        syncclient.clear_manual_key(config, 1)
+        assert syncclient.manual_key_for(config, 1) == ""
+
+    def test_it_does_not_disturb_a_different_apps_override(self, config):
+        syncclient.set_manual_key(config, 1, "firefox")
+        syncclient.set_manual_key(config, 2, "chrome")
+        syncclient.clear_manual_key(config, 1)
+        assert syncclient.manual_key_for(config, 1) == ""
+        assert syncclient.manual_key_for(config, 2) == "chrome"
+
+    def test_setting_it_drops_the_cached_server_id(self, config, synced):
+        # _ensure_app_ids only re-sends an app already missing from
+        # server_app_ids — an override that did not do this would sit
+        # unused until the app was untracked and retracked.
+        assert config.get("server_app_ids") == {str(synced): 42}
+        syncclient.set_manual_key(config, synced, "discord-alt")
+        assert str(synced) not in config.get("server_app_ids")
+
+    def test_setting_it_to_the_same_key_still_drops_the_mapping(self, config, synced):
+        # No special-casing "the key did not actually change" — simpler, and
+        # the cost is one redundant /apps entry, not a wrong merge.
+        syncclient.set_manual_key(config, synced, "discord")
+        assert str(synced) not in config.get("server_app_ids")
+
+    def test_clearing_also_drops_the_cached_server_id(self, config, synced):
+        syncclient.set_manual_key(config, synced, "discord-alt")
+        config.set("server_app_ids", {str(synced): 99})   # simulate a re-sync
+        syncclient.clear_manual_key(config, synced)
+        assert str(synced) not in config.get("server_app_ids")
+
+    def test_a_sync_cycle_sends_the_override_and_updates_the_mapping(
+            self, db, config, synced):
+        # "our-discord" normalises to "ourdiscord" (canonical_app_key drops
+        # punctuation, same as everywhere else) — set_manual_key's own
+        # return value is exactly this, which is what the test asserts on.
+        stored_key = syncclient.set_manual_key(config, synced, "our-discord")
+
+        transport = FakeTransport({
+            syncclient.ENDPOINT_APPS: {"m": {str(synced): 77}},
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+
+        apps_payload = transport.payload_for(syncclient.ENDPOINT_APPS)
+        assert apps_payload["a"] == [[synced, stored_key, "Social"]]
+        # The server's answer under the new key is what gets used from here.
+        assert config.get("server_app_ids") == {str(synced): 77}
 
 
 class TestStaleDataIsNotEnforcedAgainst:

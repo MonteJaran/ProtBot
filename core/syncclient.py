@@ -374,7 +374,8 @@ class SyncClient:
         if not missing:
             return
 
-        payload = syncproto.build_app_sync(self.device_id, apps)
+        payload = syncproto.build_app_sync(self.device_id, apps,
+                                           overrides=self._manual_keys())
         if not payload:
             return
 
@@ -392,6 +393,10 @@ class SyncClient:
 
     def _app_id_map(self) -> dict:
         raw = self.config.get("server_app_ids", {}) or {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _manual_keys(self) -> dict:
+        raw = self.config.get("sync_key_overrides", {}) or {}
         return raw if isinstance(raw, dict) else {}
 
     def _server_id_for(self, local_app_id: int) -> int:
@@ -485,3 +490,63 @@ def unregister_device(config) -> None:
     config.set("server_app_ids", {})
     config.set("linked_devices", [])
     log.info("Device unregistered; sync is off.")
+
+
+# ── Matching an app across devices by hand ──────────────────────────────────
+#
+# canonical_app_key (core/syncproto.py) is a best-effort guess and says so:
+# a package named after its vendor rather than its product — Firefox.exe
+# meeting org.mozilla.firefox — is a case no string rule resolves without a
+# brand list. This is the fallback: let the user say "these two are the same
+# app" directly, on both devices, rather than counting the same app twice
+# because a guess came up short. See STATUS.md.
+
+
+def manual_key_for(config, local_app_id: int) -> str:
+    """The manual sync key for one app, or "" if it uses the automatic one."""
+    try:
+        overrides = config.get("sync_key_overrides", {}) or {}
+        return str(overrides.get(str(int(local_app_id)), "") or "").strip()
+    except Exception:
+        return ""
+
+
+def set_manual_key(config, local_app_id: int, text: str) -> str:
+    """
+    Give one app the sync key `text` normalises to, instead of the one
+    canonical_app_key would compute from its name.
+
+    Returns the key actually stored — `text` run through canonical_app_key's
+    own normalisation, the same rules applied to every other name in this
+    protocol, so what the caller sees echoed back is exactly what has to
+    match on the other device, not raw text that merely looks similar.
+    `text` that normalises to nothing (empty, or noise only) clears the
+    override instead of setting it to "": an empty key is not "no override",
+    it is the one string every other unresolved app would also collide on.
+
+    Also drops this app's cached server id (see core/syncproto.py's
+    canonical_app_key: a different key means a different identity server-
+    side), so the next sync cycle re-sends it under the new key instead of
+    silently keeping the old mapping — `_ensure_app_ids` only re-sends an
+    app already missing from that map.
+    """
+    key = syncproto.canonical_app_key(text)
+    app_key = str(int(local_app_id))
+
+    overrides = dict(config.get("sync_key_overrides", {}) or {})
+    if key:
+        overrides[app_key] = key
+    else:
+        overrides.pop(app_key, None)
+    config.set("sync_key_overrides", overrides)
+
+    server_ids = dict(config.get("server_app_ids", {}) or {})
+    if server_ids.pop(app_key, None) is not None:
+        config.set("server_app_ids", server_ids)
+
+    return key
+
+
+def clear_manual_key(config, local_app_id: int) -> None:
+    """Go back to the automatic key for one app."""
+    set_manual_key(config, local_app_id, "")

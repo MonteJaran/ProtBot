@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 794 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 809 Python tests green on 3.10 and 3.12, plus 118
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -55,24 +55,19 @@ one, so the stock-camera path is complete. What is missing is scanning from
 machine with no Android SDK.
 
 ### 3. Build the Android app for real
-The shared rules compile and pass 115 tests. `android/app/` has never been
-compiled, because this machine has no Android SDK. Until someone runs
-`gradle :app:assembleDebug`, the Android half is source code rather than
-software.
+The shared rules compile and pass the Kotlin count in the header above.
+`android/app/` has never been compiled, because this machine has no Android
+SDK. Until someone runs `gradle :app:assembleDebug`, the Android half is
+source code rather than software.
 
 ### 4. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
-and tested.
+and tested — including, now, the manual app-matching data layer (see
+Finished below): `SyncClient.kt` has `manualKeyFor`/`setManualKey`/
+`clearManualKey` ready, and no screen calls them yet.
 
-### 5. Let people link apps across devices by hand
-`syncproto.canonical_app_key` joins the same app on two devices by normalising
-its name — a good guess, not a guarantee. A package named after its vendor
-rather than its product will not meet the desktop executable. A small screen
-saying "these two are the same app" closes it. Nothing depends on it: an
-unmatched app simply counts per-device.
-
-### 6. The remaining roadmap features
+### 5. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -132,6 +127,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **QR device linking** | The PC shows a code, the phone scans it. The key travels in the URL fragment, which never reaches a web server. An https App Link, not a custom scheme, so the stock camera can open it. The characters stay on screen beside the code as a fallback. |
 | **A QR encoder** | `core/qrcode.py`, standard library only — byte mode, versions 1–10, all four error levels. Verified by reading generated symbols back with a real decoder, which caught two bugs that produced pixel-perfect unreadable codes. |
 | **The sync API is authenticated, client-side (AUDIT SF-09)** | Registration now returns a bearer token as well as a device id, and every client — desktop and the Android app's `SyncClient.kt` — sends it as `Authorization: Bearer <token>` on every request after; no device id travels in a URL path anywhere any more. `ui/devices_page.py` also turned out to be a *third*, older, unauthenticated implementation of registration and linking that never called the tested `core/syncclient.py` / `core/linking.py` it duplicated — including a `/r` endpoint that had drifted from the real `/register`, and a "cross-device rows" display in the Processes tab reading response fields no server contract ever defined. Both are now gone in favour of the one implementation; a new `core.linking.list_group()` lists the Devices tab's group with no device id in the request at all. What is not done: a server to check the token against — there still isn't one (see "Blocked on you" above), so this closes the client half of SF-09, not the finding. |
+| **Matching an app across devices by hand** | `syncproto.canonical_app_key` is a best-effort guess and cannot resolve every pair (Firefox.exe never meets `org.mozilla.firefox` on its own — see Known-imperfect below). The Devices tab's new "Match Apps…" dialog lets the user give an app the same sync key on both devices instead; an override wins outright over the computed key, and setting one drops that app's cached server id so the next sync cycle re-sends it under the new key. Mirrored in the Android app's `SyncClient.kt` (`manualKeyFor`/`setManualKey`/`clearManualKey`) so the data is ready whenever Android has a screen to call it from — it does not yet. |
 
 ### Legal and compliance
 
@@ -152,7 +148,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **909 tests** | 794 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. (This row is not itself test-enforced the way the "Where things stand" count above is — caught stale once already; if it drifts again, trust the header.) |
+| **A full test suite** | Counts are at the top of this file, which a test holds current — not repeated here, after this row itself went stale once. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
 | **A software bill of materials, in CI** | `cyclonedx-py` over `requirements.lock`, published as a build artifact on every push. For the EU Cyber Resilience Act — vulnerability-reporting obligations begin 11 September 2026. `tests/test_sbom.py` checks the generated SBOM actually lists every pinned dependency at its pinned version, not just that the command exits 0. |
@@ -181,7 +177,8 @@ Recorded so nobody rediscovers them as bugs.
   against a two-hour-old guess is the worse failure.
 - **The app-name join across devices is a guess.** No string rule resolves a
   package named after its vendor without a brand list. An unmatched app counts
-  per-device, which is the behaviour without sync.
+  per-device, which is the behaviour without sync — or the user closes it by
+  hand from the Devices tab's "Match Apps…" dialog.
 - **A link code is a secret with a short life.** Whoever scans it joins the
   device group and can read its totals. Five minutes, single use, and the
   dialog says so.

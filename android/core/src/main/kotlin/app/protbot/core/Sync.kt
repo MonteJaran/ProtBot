@@ -109,6 +109,28 @@ object Sync {
     }
 
     /**
+     * The sync key for one app: a manual override if a non-blank one is
+     * given, otherwise the automatic guess from its name.
+     *
+     * [canonicalAppKey] is a best-effort guess and says so in its own doc
+     * comment — a package named after its vendor rather than its product is
+     * a case no string rule resolves without a brand list. This is the
+     * other half of the fallback: the user types the same key on both
+     * devices, this makes it win outright rather than merely break a tie,
+     * and the two devices join on it exactly as if the guess had matched.
+     * Mirrors the desktop's core/syncclient.py set_manual_key /
+     * core/syncproto.py build_app_sync — this platform builds its /apps
+     * payload inline in SyncClient.kt rather than through a shared pure
+     * builder, so this function is that decision's one line, kept here
+     * rather than inlined so it is under test the same as everything else
+     * in this object.
+     */
+    fun effectiveAppKey(name: String?, manualOverride: String?): String {
+        val override = manualOverride?.trim().orEmpty()
+        return override.ifEmpty { canonicalAppKey(name) }
+    }
+
+    /**
      * The segment of a package name that identifies the product.
      *
      * Not simply the last one. Android packages come in two shapes, and taking

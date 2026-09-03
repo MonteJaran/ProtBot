@@ -293,7 +293,16 @@ class DevicesPage(ttk.Frame):
                   relief='flat', bd=0, padx=12, pady=6,
                   activebackground=ACCENT, activeforeground='#fff',
                   cursor='hand2',
-                  command=self._show_join_dialog).pack(side='left')
+                  command=self._show_join_dialog).pack(side='left', padx=(8, 0))
+
+        tk.Button(btn_row,
+                  text="Match Apps…",
+                  bg=BG3, fg=TEXT,
+                  font=('Segoe UI', 9),
+                  relief='flat', bd=0, padx=12, pady=6,
+                  activebackground=ACCENT, activeforeground='#fff',
+                  cursor='hand2',
+                  command=self._show_match_apps_dialog).pack(side='left', padx=(8, 0))
 
         if at_limit and not licensing.is_premium(self.config):
             tk.Label(card,
@@ -679,6 +688,131 @@ class DevicesPage(ttk.Frame):
                             parent=self)
         # Fetch live group device list from server so the other device shows up
         self._refresh_group_devices()
+
+    # ── Matching apps across devices by hand ────────────────────────────────
+    #
+    # syncproto.canonical_app_key is a best-effort guess and says so: a
+    # package named after its vendor rather than its product — Firefox.exe
+    # meeting org.mozilla.firefox — is a case no string rule resolves
+    # without a brand list. This dialog is the fallback: type the same key
+    # on both devices and they join, the same as if the guess had matched.
+    # See STATUS.md and core/syncclient.py's set_manual_key.
+
+    def _show_match_apps_dialog(self):
+        from core import syncproto
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Match Apps Across Devices")
+        dialog.geometry("520x460")
+        dialog.configure(bg=BG)
+        dialog.transient(self)
+        dialog.resizable(False, True)
+        a11y.bind_escape_closes(dialog)
+
+        tk.Label(
+            dialog,
+            text="ProtBot guesses which app here is the same as one on another\n"
+                 "device by its name. When that guess is wrong, give the app the\n"
+                 "same sync key here and on the other device to join them by hand.",
+            bg=BG, fg=TEXT2, font=('Segoe UI', 9), justify='left',
+            wraplength=480,
+        ).pack(anchor='w', padx=16, pady=(14, 10))
+
+        # Scrollable list — the app count is unbounded, unlike everything
+        # else in this dialog.
+        outer = tk.Frame(dialog, bg=BG)
+        outer.pack(fill='both', expand=True, padx=16)
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
+        sb = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+        a11y.focus_scrollable(canvas, self.config)
+        canvas.bind('<Button-1>', lambda e: canvas.focus_set())
+        canvas.bind('<Up>',   lambda e: canvas.yview_scroll(-1, 'units'))
+        canvas.bind('<Down>', lambda e: canvas.yview_scroll(1, 'units'))
+
+        inner = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=inner, anchor='nw')
+        inner.bind('<Configure>',
+            lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>',
+            lambda e: canvas.itemconfig(win_id, width=e.width))
+
+        try:
+            apps = self.db.get_all_tracked_apps() or []
+        except Exception as exc:
+            log.error("Could not read tracked apps for the match dialog: %s", exc)
+            apps = []
+
+        if not apps:
+            tk.Label(inner, text="No tracked apps yet.",
+                     bg=BG, fg=TEXT2, font=('Segoe UI', 9)).pack(
+                anchor='w', pady=8)
+
+        for app in apps:
+            self._match_app_row(inner, app, syncproto)
+
+        tk.Button(dialog, text="Close", bg=BG3, fg=TEXT,
+                  font=('Segoe UI', 9), relief='flat', bd=0, padx=14, pady=6,
+                  activebackground=ACCENT, activeforeground='#fff',
+                  cursor='hand2', command=dialog.destroy).pack(pady=(6, 14))
+
+    def _match_app_row(self, parent, app, syncproto) -> None:
+        from core import syncclient
+
+        app_id = app.get("id")
+        name = app.get("name", "") or app.get("exe_name", "")
+        auto_key = syncproto.canonical_app_key(name)
+        manual = syncclient.manual_key_for(self.config, app_id)
+
+        row = tk.Frame(parent, bg='#0d1e38')
+        row.pack(fill='x', pady=3)
+
+        tk.Label(row, text=name, bg='#0d1e38', fg=TEXT,
+                 font=('Segoe UI', 9, 'bold'), width=16, anchor='w',
+                 wraplength=110, justify='left').pack(
+            side='left', padx=(10, 6), pady=6)
+
+        key_var = tk.StringVar(value=manual or auto_key)
+        entry = ttk.Entry(row, textvariable=key_var, width=16)
+        entry.pack(side='left', padx=(0, 6))
+
+        status = tk.Label(row, bg='#0d1e38', fg=TEXT2, font=('Segoe UI', 8),
+                          width=8, anchor='w')
+        status.pack(side='left', padx=(0, 6))
+
+        def refresh_status() -> None:
+            current = syncclient.manual_key_for(self.config, app_id)
+            status.config(text="custom" if current else "automatic",
+                         fg=ACCENT if current else TEXT2)
+
+        def save(_event=None) -> None:
+            typed = key_var.get()
+            if syncproto.canonical_app_key(typed) == auto_key:
+                # Typing back the automatic key is the same as not
+                # overriding it — clear rather than store a no-op override,
+                # so "automatic" still reads as automatic afterwards.
+                syncclient.clear_manual_key(self.config, app_id)
+            else:
+                stored = syncclient.set_manual_key(self.config, app_id, typed)
+                key_var.set(stored)
+            refresh_status()
+
+        def reset() -> None:
+            syncclient.clear_manual_key(self.config, app_id)
+            key_var.set(auto_key)
+            refresh_status()
+
+        entry.bind('<Return>', save)
+        entry.bind('<FocusOut>', save)
+
+        tk.Button(row, text="Reset", bg='#0d1e38', fg=TEXT2,
+                  font=('Segoe UI', 8), relief='flat', bd=0, padx=6,
+                  activebackground=BG3, activeforeground=TEXT,
+                  cursor='hand2', command=reset).pack(side='left')
+
+        refresh_status()
 
     def _refresh_group_devices(self):
         """Fetch group member list from server, update config, repopulate UI."""

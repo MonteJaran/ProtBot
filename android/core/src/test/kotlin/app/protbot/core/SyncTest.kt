@@ -94,6 +94,31 @@ class SyncTest {
         )
     }
 
+    // ── Matching an app across devices by hand ───────────────────────────
+
+    @Test fun `no override falls back to the automatic key`() {
+        assertEquals("firefox", Sync.effectiveAppKey("Firefox.exe", null))
+        assertEquals("firefox", Sync.effectiveAppKey("Firefox.exe", ""))
+        assertEquals("firefox", Sync.effectiveAppKey("Firefox.exe", "   "))
+    }
+
+    @Test fun `an override wins outright, not as a tie breaker`() {
+        // This is the whole point of the join the desktop's own name for it
+        // does not resolve on its own — see "the join is best effort" above.
+        assertEquals(
+            Sync.effectiveAppKey("Firefox.exe", "firefox"),
+            Sync.effectiveAppKey("org.mozilla.firefox", "firefox"),
+        )
+    }
+
+    @Test fun `the override is trimmed but not otherwise renormalised here`() {
+        // Mirrors core/syncclient.py's set_manual_key: normalisation
+        // (canonicalAppKey's own rules) happens once, when the override is
+        // stored, not again on every read — this function trusts what it is
+        // given past trimming stray whitespace.
+        assertEquals("Our-Firefox", Sync.effectiveAppKey("Firefox.exe", "  Our-Firefox  "))
+    }
+
     // ── The merge rule ───────────────────────────────────────────────────
 
     @Test fun `the other devices time is added to local`() {

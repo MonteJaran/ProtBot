@@ -71,10 +71,10 @@ a test guarding it; do not "fix" that test.
 ## Verifying a change
 
 ```bash
-python -m pytest -q                     # 504 tests
+python -m pytest -q                     # see STATUS.md for the current count
 ruff check .
 python -m compileall -q core ui server main.py   # the Tk modules the suite cannot import
-cd android && gradle :core:test          # 93 Kotlin tests, no Android SDK needed
+cd android && gradle :core:test          # see STATUS.md; no Android SDK needed
 ```
 
 `android/app/` cannot be compiled without an Android SDK. If one is not

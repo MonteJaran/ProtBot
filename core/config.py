@@ -64,6 +64,10 @@ DEFAULT_CONFIG: dict = {
     "entitlement": {},
     "linked_devices": [],          # [{id, name, last_seen}, ...]
     "server_app_ids": {},          # {local_db_id: server_id} mapping
+    # {local_db_id: key} — a user-typed sync key for an app canonical_app_key
+    # could not resolve to the same one on another device. See
+    # core/syncclient.py's set_manual_key and STATUS.md.
+    "sync_key_overrides": {},
 }
 
 

@@ -245,8 +245,12 @@ class SyncClient(
         val known = appIdMap()
         if (apps.all { known.containsKey(it.packageName) }) return
 
+        val overrides = manualKeyMap()
         val entries = apps.mapNotNull { app ->
-            val key = Sync.canonicalAppKey(app.label.ifBlank { app.packageName })
+            val key = Sync.effectiveAppKey(
+                app.label.ifBlank { app.packageName },
+                overrides[app.packageName],
+            )
             if (key.isEmpty()) null else JSONArray(listOf(app.packageName, key, ""))
         }
         if (entries.isEmpty()) return
@@ -291,6 +295,79 @@ class SyncClient(
 
     private fun serverIdFor(packageName: String): Int? =
         appIdMap()[packageName]?.takeIf { it > 0 }
+
+    // ── Matching an app across devices by hand ───────────────────────────
+    //
+    // Sync.canonicalAppKey is a best-effort guess and says so in its own doc
+    // comment — a package named after its vendor rather than its product is
+    // a case no string rule resolves without a brand list. This is the
+    // fallback: the user gives an app the same key on both devices, and
+    // Sync.effectiveAppKey (used by ensureAppIds above) makes it win
+    // outright. Mirrors the desktop's core/syncclient.py set_manual_key /
+    // manual_key_for / clear_manual_key. There is no screen that calls
+    // these yet — the Android UI is source without a build, see STATUS.md —
+    // but the data layer is ready for the one that does.
+
+    /** The manual sync key for one app, or "" if it uses the automatic one. */
+    fun manualKeyFor(packageName: String): String = manualKeyMap()[packageName].orEmpty()
+
+    /**
+     * Give one app the sync key `text` normalises to, instead of the one
+     * [Sync.canonicalAppKey] would compute from its name.
+     *
+     * Returns the key actually stored — `text` run through
+     * [Sync.canonicalAppKey]'s own normalisation, the rules applied to
+     * every other name in this protocol, so what the caller sees echoed
+     * back is exactly what has to match on the other device. Text that
+     * normalises to nothing clears the override instead of storing "": an
+     * empty key is not "no override", it is the one string every other
+     * unresolved app would also collide on.
+     *
+     * Also drops this app's cached server id, so the next sync cycle
+     * re-sends it under the new key — [ensureAppIds] only re-sends an app
+     * already missing from that map.
+     */
+    fun setManualKey(packageName: String, text: String): String {
+        val key = Sync.canonicalAppKey(text)
+
+        val overrides = manualKeyMap().toMutableMap()
+        if (key.isNotEmpty()) overrides[packageName] = key else overrides.remove(packageName)
+        saveManualKeyMap(overrides)
+
+        val serverIds = appIdMap()
+        if (serverIds.containsKey(packageName)) {
+            saveAppIdMap(serverIds - packageName)
+        }
+
+        return key
+    }
+
+    /** Go back to the automatic key for one app. */
+    fun clearManualKey(packageName: String) {
+        setManualKey(packageName, "")
+    }
+
+    private fun manualKeyMap(): Map<String, String> {
+        val raw = prefs.getString(KEY_SYNC_KEY_OVERRIDES, "") ?: ""
+        if (raw.isEmpty()) return emptyMap()
+        return try {
+            val json = JSONObject(raw)
+            json.keys().asSequence().mapNotNull { pkg ->
+                val key = json.optString(pkg, "")
+                if (key.isNotEmpty()) pkg to key else null
+            }.toMap()
+        } catch (e: Exception) {
+            // A corrupt preference must not stop sync forever — see appIdMap.
+            android.util.Log.w(TAG, "Discarding unreadable sync key overrides", e)
+            emptyMap()
+        }
+    }
+
+    private fun saveManualKeyMap(map: Map<String, String>) {
+        val json = JSONObject()
+        for ((pkg, key) in map) json.put(pkg, key)
+        prefs.edit().putString(KEY_SYNC_KEY_OVERRIDES, json.toString()).apply()
+    }
 
     private suspend fun localTotalsByServerId(today: LocalDate): Map<Int, Long> {
         val ids = appIdMap()
@@ -342,5 +419,6 @@ class SyncClient(
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DEVICE_TOKEN = "device_token"
         private const val KEY_APP_IDS = "server_app_ids"
+        private const val KEY_SYNC_KEY_OVERRIDES = "sync_key_overrides"
     }
 }

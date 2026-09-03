@@ -20,6 +20,14 @@ any of it. The first entry under a real version number will be written when
 
 ### Added
 
+- **Matching an app across devices by hand.** The automatic name-based join
+  (`canonical_app_key`) cannot resolve every pair — a package named after
+  its vendor rather than its product, like Firefox.exe and
+  `org.mozilla.firefox`, needs a brand list no string rule has. The Devices
+  tab's new "Match Apps…" dialog lets the user give an app the same sync
+  key on both devices instead, closing the gap by hand. Mirrored in the
+  Android app's `SyncClient.kt` data layer, ready for the screen that will
+  eventually call it.
 - **ProtBot is now an installable package.** `pyproject.toml` declares a
   real build backend and a `protbot` console-script entry point
   (`pip install -e .`, then `protbot`). `main.py` no longer reaches `core/`
