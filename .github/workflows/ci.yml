@@ -124,6 +124,68 @@ jobs:
         # what stops that going unnoticed.
         run: pip-audit --requirement requirements.lock --strict --progress-spinner off
 
+  package:
+    name: Package build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the wheel
+        # The project declares a build backend (AUDIT ST-04). Nothing had ever
+        # tried to use it, which is how a "License ::" classifier alongside the
+        # PEP 639 license expression sat in pyproject.toml making the project
+        # unbuildable. Building here is what stops that happening again.
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+
+      - name: Install it and check the entry point exists
+        run: |
+          python -m pip install dist/*.whl
+          python -c "import importlib.metadata as m; \
+            eps = m.entry_points(group='gui_scripts'); \
+            assert any(e.name == 'protbot' for e in eps), 'no protbot entry point'; \
+            print('entry point OK')"
+
+  sbom:
+    name: Bill of materials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate the SBOM
+        # Regulation (EU) 2024/2847 (the Cyber Resilience Act) requires a bill
+        # of materials in a machine-readable format covering at least the
+        # top-level dependencies. Generated from requirements.lock, which is
+        # what a release build actually installs — see packaging/sbom.py.
+        run: python packaging/sbom.py --output protbot.cdx.json
+
+      - name: Validate it against the official CycloneDX schema
+        # The generator is standard library only, so nothing in the build path
+        # depends on this. It runs here, where a network is available, because
+        # hand-reading a JSON schema is not verification.
+        run: |
+          python -m pip install --upgrade pip jsonschema cyclonedx-python-lib
+          python -m pytest tests/test_sbom.py -v
+
+      - name: Keep the document
+        # Retained as a build artifact rather than committed: it is derived
+        # from the lockfile, and a generated file in the tree is a file that
+        # goes stale between the change and the regeneration.
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: protbot.cdx.json
+          if-no-files-found: error
+
   android-core:
     name: Android shared rules
     runs-on: ubuntu-latest

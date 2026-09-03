@@ -40,7 +40,13 @@ a = Analysis(
         # tests/test_packaging_build.py fails if either is dropped.
         (str(ROOT / "LICENSE"), "."),
         (str(ROOT / "THIRD_PARTY_NOTICES.md"), "."),
-    ],
+    ] + ([
+        # The CycloneDX bill of materials, for Regulation (EU) 2024/2847.
+        # Written by packaging/sbom.py, which build.ps1 runs first. Guarded
+        # because a spec run by hand, without the build script, should still
+        # produce an app rather than an error about a missing generated file.
+        (str(ROOT / "packaging" / "protbot.cdx.json"), "."),
+    ] if (ROOT / "packaging" / "protbot.cdx.json").is_file() else []),
     hiddenimports=[
         # plyer resolves its platform backend by string at call time, so
         # PyInstaller's import graph cannot see this one.

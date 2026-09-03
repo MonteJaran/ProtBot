@@ -269,3 +269,124 @@ def test_build_docs_exist_and_flag_the_untested_parts():
     assert "SmartScreen" in doc
     # core/tray.py is Win32 ctypes that has genuinely never run.
     assert "never been run" in doc or "never run" in doc
+
+
+# ── The bill of materials ships with the product ──────────────────────────────
+# Regulation (EU) 2024/2847 is about the product, not the repository. A
+# document that exists only as a CI artifact does not accompany anything a
+# user installs, so the build has to produce it and the build has to bundle it.
+
+def test_the_build_generates_the_bill_of_materials():
+    build = read(BUILD_PS1)
+    assert "sbom.py" in build, (
+        "packaging/build.ps1 no longer generates the SBOM. The Cyber "
+        "Resilience Act wants one covering the product's dependencies."
+    )
+
+
+def test_the_bill_of_materials_is_generated_before_pyinstaller_runs():
+    # Order matters: the spec bundles the file, so a build that writes it
+    # afterwards ships without it and nothing fails.
+    #
+    # Anchored to the invocation, not the word: "PyInstaller" appears in the
+    # script's opening comment, which is before everything.
+    build = read(BUILD_PS1)
+    assert build.index("sbom.py") < build.index("python -m PyInstaller")
+
+
+def test_a_failed_sbom_stops_the_build():
+    build = read(BUILD_PS1)
+    after = build[build.index("sbom.py"):]
+    assert "throw 'SBOM generation failed.'" in after[:400]
+
+
+def test_the_spec_bundles_the_bill_of_materials():
+    assert "protbot.cdx.json" in read(SPEC)
+
+
+def test_the_generated_document_is_not_committed():
+    # It is derived from requirements.lock. A generated file in the tree is
+    # wrong between the moment a dependency changes and the moment someone
+    # remembers to regenerate it.
+    assert not (PACKAGING / "protbot.cdx.json").is_file(), (
+        "packaging/protbot.cdx.json is generated; it should not be committed."
+    )
+    assert "protbot.cdx.json" in read(REPO_ROOT / ".gitignore")
+
+
+# ── The project is installable (AUDIT ST-04) ──────────────────────────────────
+# It used to be importable only because main.py put its own directory on
+# sys.path. That hid the real gap, which was that pyproject.toml declared no
+# build backend at all — so the project could not be installed, and nobody
+# found out because nobody tried.
+
+def _pyproject() -> dict:
+    try:
+        import tomllib
+    except ModuleNotFoundError:            # Python 3.10
+        pytest.importorskip("tomli")
+        import tomli as tomllib
+    with open(REPO_ROOT / "pyproject.toml", "rb") as fh:
+        return tomllib.load(fh)
+
+
+def test_the_project_declares_a_build_backend():
+    build_system = _pyproject().get("build-system", {})
+    assert build_system.get("build-backend"), (
+        "pyproject.toml has no [build-system]. Without one the project cannot "
+        "be installed at all — see AUDIT ST-04."
+    )
+    assert build_system.get("requires")
+
+
+def test_there_is_an_entry_point_and_it_resolves():
+    scripts = {**_pyproject()["project"].get("scripts", {}),
+               **_pyproject()["project"].get("gui-scripts", {})}
+    assert "protbot" in scripts
+
+    module, _, attribute = scripts["protbot"].partition(":")
+    # Resolved from the source, not imported: ui/ pulls in tkinter, which the
+    # test suite cannot import on a headless runner.
+    source = read(REPO_ROOT.joinpath(*module.split(".")).with_suffix(".py"))
+    assert f"def {attribute}(" in source
+
+
+def test_the_entry_point_is_a_gui_script():
+    # On Windows a console script opens a console window that stays for the
+    # life of the app. gui-scripts builds the launcher on pythonw.exe instead.
+    assert "protbot" in _pyproject()["project"].get("gui-scripts", {})
+
+
+def test_the_install_carries_the_app_and_not_the_scaffolding():
+    packages = _pyproject()["tool"]["setuptools"]["packages"]
+    assert set(packages) == {"core", "ui"}, (
+        "server/ is a wire contract for a service and tests/ and packaging/ "
+        "are scaffolding; none of them belong in an install."
+    )
+
+
+def test_no_module_edits_sys_path_to_import_the_app():
+    # The hack ST-04 named. Test helpers and build scripts legitimately still
+    # do this — they run as scripts from outside the package — so this covers
+    # the application itself.
+    for directory in ("core", "ui"):
+        base = REPO_ROOT / directory
+        for path in sorted(base.glob("*.py")):
+            assert "sys.path.insert" not in read(path), (
+                f"{directory}/{path.name} edits sys.path. The project is "
+                "installable now; import it instead."
+            )
+    assert "sys.path.insert" not in read(REPO_ROOT / "main.py")
+
+
+def test_the_licence_is_declared_once_and_not_twice():
+    # PEP 639 replaced the "License :: ..." classifier with the `license`
+    # expression, and setuptools refuses to build a project carrying both.
+    # This is what stopped the project packaging before ST-04 was finished.
+    project = _pyproject()["project"]
+    assert project.get("license")
+    assert not [c for c in project.get("classifiers", [])
+                if c.startswith("License ::")], (
+        "A 'License ::' classifier alongside the PEP 639 license expression "
+        "makes the project unbuildable."
+    )

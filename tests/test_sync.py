@@ -17,6 +17,7 @@ agree: the key is the only thing joining "Discord.exe" on the PC to
 gets two half-counted apps and no error anywhere.
 """
 
+import json
 import time
 from datetime import datetime
 
@@ -262,6 +263,9 @@ class FakeTransport:
     def __init__(self, responses=None):
         self.responses = responses or {}
         self.requests = []
+        # What the real Transport records: the HTTP status of the last
+        # response, so a refused credential can be told from a bad network.
+        self.last_status = 200
 
     def post(self, path, payload):
         self.requests.append((path, payload))
@@ -286,7 +290,11 @@ def synced(db, config):
     from core import consent
 
     consent.record_consent(config, True)
+    # Both halves of the credential. Registration issues them together and
+    # sync refuses to run without the token, so a fixture that set only the id
+    # would be testing an install that cannot exist.
     config.set("device_id", "device-abc")
+    config.set("device_token", "token-abc")
     app_id = db.add_tracked_app("Discord", "discord.exe", "", "", "Social")
     config.set("server_app_ids", {str(app_id): 42})
     return app_id
@@ -307,8 +315,9 @@ class TestSyncIsOffUntilTheUserTurnsItOn:
 
     def test_no_consent_means_no_requests(self, db, config):
         # PRIVACY.md says nothing leaves the machine before the policy is
-        # accepted. A device id alone must not be enough.
+        # accepted. A full credential must not be enough without it.
         config.set("device_id", "device-abc")
+        config.set("device_token", "token-abc")
 
         transport = FakeTransport()
         client = SyncClient(db, config, transport=transport)
@@ -465,20 +474,45 @@ class TestStaleDataIsNotEnforcedAgainst:
 class TestRegistration:
 
     def test_registering_stores_the_id_the_server_gave(self, config):
-        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        transport = FakeTransport(
+            {syncclient.ENDPOINT_REGISTER: {"id": "abc123", "t": "secret-token"}})
         assert syncclient.register_device(config, "my-pc", transport=transport) == "abc123"
         assert config.get("device_id") == "abc123"
 
+    def test_registering_stores_the_token_too(self, config):
+        # The id names the device; the token proves it. Sync needs both.
+        transport = FakeTransport(
+            {syncclient.ENDPOINT_REGISTER: {"id": "abc123", "t": "secret-token"}})
+        syncclient.register_device(config, "my-pc", transport=transport)
+        assert config.get("device_token") == "secret-token"
+
     def test_an_email_is_only_sent_when_typed(self, config):
-        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        transport = FakeTransport(
+            {syncclient.ENDPOINT_REGISTER: {"id": "abc123", "t": "secret-token"}})
         syncclient.register_device(config, "my-pc", transport=transport)
         assert "e" not in transport.payload_for(syncclient.ENDPOINT_REGISTER)
 
-    @pytest.mark.parametrize("response", [None, {}, {"id": ""}, "not-json"])
+    @pytest.mark.parametrize("response", [None, {}, {"id": ""}, "not-json",
+                                          {"id": "abc123", "t": ""}])
     def test_a_failed_registration_leaves_sync_off(self, config, response):
+        # The last case is the one worth spelling out: a server that hands back
+        # an id but no token. Storing the id anyway would leave the app using
+        # an identifier as a credential, which is the whole of AUDIT SF-09.
         transport = FakeTransport({syncclient.ENDPOINT_REGISTER: response})
         assert syncclient.register_device(config, "my-pc", transport=transport) == ""
         assert config.get("device_id") == ""
+
+    def test_a_registration_without_a_token_stores_nothing_at_all(self, config):
+        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        syncclient.register_device(config, "my-pc", transport=transport)
+        assert config.get("device_id") == ""
+        assert config.get("device_token") == ""
+
+    def test_unregistering_forgets_the_token(self, config):
+        config.set("device_id", "abc123")
+        config.set("device_token", "secret-token")
+        syncclient.unregister_device(config)
+        assert config.get("device_token") == ""
 
 
 class TestNothingUndisclosedLeavesTheMachine:
@@ -525,6 +559,7 @@ class TestNothingUndisclosedLeavesTheMachine:
 
         consent.record_consent(config, True)
         config.set("device_id", "device-abc")
+        config.set("device_token", "token-abc")
         db.add_tracked_app("Discord", "discord.exe",
                            r"C:\Users\dejan\AppData\Discord\app.exe", "", "Social")
 
@@ -619,3 +654,293 @@ class TestTheLimitCheckCountsBothDevices:
 
         both = self._monitor(db, config, remote_sec=25 * 60)
         assert both._usage_today_sec(synced) >= 3600
+
+
+# ── The credential (AUDIT SF-09) ──────────────────────────────────────────
+
+class CapturingOpener:
+    """
+    Stands in for urllib.request.urlopen and records the Request it was given.
+
+    The header is the whole point of the fix, and a fake at the Transport level
+    cannot see one — it is handed a path and a payload. So these tests go one
+    layer lower and inspect the request that would actually go on the wire.
+    """
+
+    def __init__(self, status=200, body=b'{"ok": 1}'):
+        self.requests = []
+        self._status = status
+        self._body = body
+
+    def __call__(self, request, timeout=None):
+        self.requests.append(request)
+        return self
+
+    # Context-manager and reader interface of an http response.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    @property
+    def status(self):
+        return self._status
+
+    def read(self, _size=None):
+        return self._body
+
+    def header(self, name):
+        """The named header from the one request that was sent, or ""."""
+        assert self.requests, "no request was sent"
+        return self.requests[-1].get_header(name) or ""
+
+
+@pytest.fixture
+def opener(monkeypatch):
+    captured = CapturingOpener()
+    monkeypatch.setattr("urllib.request.urlopen", captured)
+    return captured
+
+
+class TestTheTokenIsSentAsAHeader:
+    """
+    The device id used to be the entire credential, and in the protocol this
+    started from it travelled in a URL path — where it lands in server, proxy
+    and intermediary logs, readable by anyone with access to them. AUDIT SF-09.
+
+    The fix is a separate secret in an `Authorization` header. These tests pin
+    the three properties that make it one: it is sent, it is sent *there*, and
+    nothing goes out without it.
+    """
+
+    def test_a_request_carries_the_token_as_a_bearer_header(self, opener):
+        transport = syncclient.Transport("https://example.com", token="secret-token")
+        transport.post("/sync", {"d": "device-abc"})
+        assert opener.header("Authorization") == "Bearer secret-token"
+
+    def test_the_token_is_read_fresh_on_every_request(self, opener):
+        # A transport is built at startup, before the user has registered. A
+        # copied-in value would be empty for the life of the process and sync
+        # would stay broken until the app was restarted.
+        box = {"token": ""}
+        transport = syncclient.Transport("https://example.com",
+                                         token=lambda: box["token"])
+
+        assert transport.post("/sync", {"d": "device-abc"}) is None   # not registered yet
+        box["token"] = "issued-later"
+        transport.post("/sync", {"d": "device-abc"})
+        assert opener.header("Authorization") == "Bearer issued-later"
+
+    def test_a_token_that_cannot_be_read_is_not_a_crash(self, opener):
+        # This runs on the sync thread inside post(); an exception here would
+        # take the cycle down rather than skipping one request.
+        def broken():
+            raise RuntimeError("config is gone")
+
+        transport = syncclient.Transport("https://example.com", token=broken)
+        assert transport.post("/sync", {"d": "device-abc"}) is None
+        assert opener.requests == []
+
+    def test_no_token_means_the_request_is_never_sent(self, opener):
+        # Refused here, not by the server. An unauthenticated request reaching
+        # the server *is* the vulnerability; being turned away is not a fix.
+        transport = syncclient.Transport("https://example.com", token="")
+        for path in (syncclient.ENDPOINT_SYNC, syncclient.ENDPOINT_UPLOAD,
+                     syncclient.ENDPOINT_APPS, "/link/new", "/link/join"):
+            assert transport.post(path, {"d": "device-abc"}) is None
+        assert opener.requests == []
+
+    def test_registration_is_the_one_call_that_needs_no_token(self, opener):
+        # It is where the token comes from, so requiring one would make
+        # registration impossible.
+        transport = syncclient.Transport("https://example.com", token="")
+        assert transport.post(syncclient.ENDPOINT_REGISTER, {"n": "my-pc"}) is not None
+        assert opener.header("Authorization") == ""
+
+    def test_the_token_never_appears_in_the_url_or_the_body(self, opener):
+        transport = syncclient.Transport("https://example.com", token="secret-token")
+        transport.post("/sync", {"d": "device-abc"})
+
+        request = opener.requests[-1]
+        assert "secret-token" not in request.full_url
+        assert b"secret-token" not in (request.data or b"")
+
+    def test_the_device_id_stays_out_of_the_url(self, opener):
+        # The other half of SF-09: the id identifies the user's data, so a URL
+        # carrying it is an access log carrying it.
+        transport = syncclient.Transport("https://example.com", token="secret-token")
+        transport.post("/sync", {"d": "device-abc"})
+        assert "device-abc" not in opener.requests[-1].full_url
+
+    def test_transport_for_carries_the_configured_token(self, config, opener):
+        config.set("device_token", "from-config")
+        config.set("server_url", "https://example.com")
+        syncclient.transport_for(config).post("/sync", {"d": "x"})
+        assert opener.header("Authorization") == "Bearer from-config"
+
+
+class TestSyncNeedsBothHalvesOfTheCredential:
+
+    def test_a_device_id_without_a_token_does_not_enable_sync(self, db, config):
+        from core import consent
+
+        consent.record_consent(config, True)
+        config.set("device_id", "device-abc")
+
+        transport = FakeTransport()
+        client = SyncClient(db, config, transport=transport)
+
+        assert not client.enabled
+        assert client.sync_once() is False
+        assert transport.requests == []
+
+    def test_both_halves_together_enable_it(self, db, config, synced):
+        assert SyncClient(db, config, transport=FakeTransport()).enabled
+
+
+class TestARefusedCredentialStopsSync:
+    """
+    401 and 403 mean the credential is wrong. Retrying on a timer never fixes
+    that, and every retry is another rejected request. Sync stops and says so
+    until the user registers the device again.
+    """
+
+    def _refusing(self, status=401):
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: None,
+            syncclient.ENDPOINT_SYNC: None,
+        })
+        transport.last_status = status
+        return transport
+
+    def test_a_refusal_is_recorded_as_one(self, db, config, synced):
+        client = SyncClient(db, config, transport=self._refusing())
+        assert client.sync_once() is False
+        assert client.credentials_refused
+        assert "credentials" in client.status()["last_error"]
+        assert client.status()["credentials_refused"] is True
+
+    def test_a_refused_client_stops_making_requests(self, db, config, synced):
+        transport = self._refusing()
+        client = SyncClient(db, config, transport=transport)
+        client.sync_once()
+        sent = len(transport.requests)
+
+        client.sync_once()
+        client.sync_once()
+        assert len(transport.requests) == sent, "kept retrying a rejected token"
+
+    def test_registering_again_gives_the_new_token_a_chance(self, db, config, synced):
+        transport = self._refusing()
+        client = SyncClient(db, config, transport=transport)
+        client.sync_once()
+        assert client.credentials_refused
+
+        config.set("device_token", "a-fresh-token")
+        transport.last_status = 200
+        transport.responses = {syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+                               syncclient.ENDPOINT_SYNC: {"apps": {}}}
+        assert client.sync_once() is True
+        assert not client.credentials_refused
+
+    @pytest.mark.parametrize("status", [0, 500, 502, 404])
+    def test_an_ordinary_failure_does_not_stop_sync(self, db, config, synced, status):
+        # A 500 or a timeout is the network being the network. Only a refusal
+        # is permanent, and treating the two alike would turn one bad afternoon
+        # into sync being off until someone noticed.
+        transport = self._refusing(status)
+        client = SyncClient(db, config, transport=transport)
+        client.sync_once()
+        assert not client.credentials_refused
+
+        before = len(transport.requests)
+        client.sync_once()
+        assert len(transport.requests) > before
+
+    def test_a_transport_with_no_status_attribute_is_not_a_refusal(
+            self, db, config, synced):
+        # A fake that predates last_status must read as "not a refusal": that
+        # is the answer that keeps the ordinary backoff.
+        transport = FakeTransport({syncclient.ENDPOINT_SYNC: None})
+        del transport.last_status
+        client = SyncClient(db, config, transport=transport)
+        client.sync_once()
+        assert not client.credentials_refused
+
+    def test_a_refusal_never_deletes_the_registration(self, db, config, synced):
+        # The user's data on the server is keyed to this id. Forgetting it
+        # because one response came back 401 would orphan it silently.
+        client = SyncClient(db, config, transport=self._refusing())
+        client.sync_once()
+        assert config.get("device_id") == "device-abc"
+
+
+class TestTheTokenIsNotHandedOut:
+
+    def test_it_is_left_out_of_the_data_export(self, db, config):
+        from core import dataexport
+
+        config.set("device_token", "secret-token")
+        assert "secret-token" not in json.dumps(dataexport.build_export(db, config))
+
+    def test_the_export_says_it_left_it_out(self, db, config):
+        from core import dataexport
+
+        assert "device_token" in dataexport.build_export(db, config)["notes"]["excluded"]
+
+
+class TestTheUiDoesNoHttpOfItsOwn:
+    """
+    A source check, because the UI modules cannot be imported here — CI
+    runners have no display.
+
+    The Devices tab used to carry its own `_api()` helper built straight on
+    urllib. That is worth guarding against rather than merely fixing: it is
+    the natural thing to write when adding one more server call, it looks
+    harmless, and it quietly opted out of everything core/syncclient.py does —
+    the token, the https refusal, the response size cap, and the tests. It was
+    also the code that registered the device, so the authenticated client was
+    the half of the app that never ran.
+    """
+
+    def _ui_sources(self):
+        import os
+
+        from tests.conftest import REPO_ROOT
+
+        ui_dir = os.path.join(REPO_ROOT, "ui")
+        for name in sorted(os.listdir(ui_dir)):
+            if name.endswith(".py"):
+                with open(os.path.join(ui_dir, name), encoding="utf-8") as fh:
+                    yield name, fh.read()
+
+    @pytest.mark.parametrize("forbidden", ["urllib", "http.client", "requests"])
+    def test_no_ui_module_imports_an_http_library(self, forbidden):
+        for name, source in self._ui_sources():
+            assert f"import {forbidden}" not in source, (
+                f"ui/{name} imports {forbidden}. Server calls belong in core/, "
+                "where the transport attaches the device token and the tests "
+                "can reach them. See AUDIT SF-09."
+            )
+
+    def test_no_ui_module_builds_a_url_with_the_device_id_in_it(self):
+        # f"/group/{dev_id}" and friends. An id in a path is an id in every
+        # access log between here and the server.
+        #
+        # Matched within a single line, and with whole-line comments stripped
+        # first: otherwise a quote anywhere earlier in the file reaches across
+        # newlines and hits the comment in processes_page.py that records the
+        # URL this replaced.
+        import re
+
+        pattern = re.compile("[\"'][^\"'\n]*\\{\\s*(dev_id|device_id)\\b")
+        for name, source in self._ui_sources():
+            code = "\n".join(
+                "" if line.lstrip().startswith("#") else line
+                for line in source.splitlines()
+            )
+            assert not pattern.search(code), (
+                f"ui/{name} interpolates a device id into a string used as a "
+                "URL. Send it in the body instead."
+            )

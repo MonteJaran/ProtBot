@@ -21,8 +21,15 @@ env/
 # Build output
 build/
 dist/
+# setuptools metadata, written by `python -m build` and by an editable install
+*.egg-info/
 # Generated from core/version.py by packaging/make_version_info.py
 packaging/version_info.txt
+# The bill of materials, generated from requirements.lock by packaging/sbom.py.
+# Not committed: it is derived, and a generated file in the tree is a file that
+# is stale between the change and the regeneration. CI keeps it as an artifact.
+packaging/protbot.cdx.json
+*.cdx.json
 
 # Test & tooling caches
 .pytest_cache/

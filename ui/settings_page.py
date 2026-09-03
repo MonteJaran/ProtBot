@@ -12,18 +12,18 @@ from core import schedule
 from core.logging_setup import get_logger
 from core.version import __version__
 
+# ── Colours ──────────────────────────────────────────────────────────────────
+# The palette, the high-contrast variant and the WCAG contrast checks all live
+# in ui/theme.py (AUDIT ST-06). This used to be nine hex literals copied into
+# six files, which is what made a high-contrast mode impossible to add — there
+# was no single thing to swap, and no single thing to measure.
+from ui.theme import (  # noqa: F401
+    ACCENT, ACCENT_TEXT, BG, BG2, BG3, BORDER, DANGER_BG, ERROR, FOCUS,
+    ON_ACCENT, ON_DANGER, SUCCESS, TEXT, TEXT2, TEXT3, WARNING,
+)
+
 log = get_logger("ui.settings")
 
-# ── Color Scheme ─────────────────────────────────────────────────────────────
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
 
 _APP_VERSION = __version__   # single source of truth: core/version.py
 
@@ -78,6 +78,9 @@ class SettingsPage(ttk.Frame):
         self._separator(inner)
         self._build_focus_hours_section(inner)
         self._separator(inner)
+        self._build_accessibility_section(inner)
+        self._separator(inner)
+
         self._build_startup_section(inner)
         self._separator(inner)
         self._build_data_section(inner)
@@ -88,7 +91,7 @@ class SettingsPage(ttk.Frame):
         ttk.Separator(parent, orient='horizontal').pack(fill='x', padx=24, pady=4)
 
     def _section_header(self, parent, title: str) -> None:
-        tk.Label(parent, text=title, bg=BG, fg=ACCENT,
+        tk.Label(parent, text=title, bg=BG, fg=ACCENT_TEXT,
                  font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=24, pady=(14, 4))
 
     # ── Section: Monitoring ───────────────────────────────────────────────────
@@ -296,6 +299,56 @@ class SettingsPage(ttk.Frame):
             ),
             bg=BG, fg=TEXT2, font=('Segoe UI', 9), justify='left',
         ).pack(anchor='w', padx=48, pady=(0, 8))
+
+    # ── Section: Startup ──────────────────────────────────────────────────────
+
+    def _build_accessibility_section(self, parent) -> None:
+        """
+        The high-contrast toggle (AUDIT ST-06).
+
+        A restart is genuinely required rather than merely convenient: each
+        page binds its colours from `ui.theme` when it is imported, which
+        happens before any window exists, so there is no live palette to swap.
+        Saying so beside the control is the honest version — a toggle that
+        appears to do nothing is worse than one that explains itself.
+        """
+        from ui import theme
+
+        self._section_header(parent, "Accessibility")
+
+        self._high_contrast = tk.BooleanVar(
+            value=theme.selected_name(self.config) == "high-contrast")
+
+        ttk.Checkbutton(
+            parent,
+            text="High-contrast colours",
+            variable=self._high_contrast,
+            command=self._apply_theme_choice,
+        ).pack(anchor='w', padx=32, pady=(0, 2))
+
+        tk.Label(
+            parent,
+            text=("Raises every text and control contrast well past the "
+                  "WCAG AA minimum. Takes effect the next time ProtBot starts."),
+            bg=BG, fg=TEXT2, font=('Segoe UI', 9),
+            wraplength=520, justify='left',
+        ).pack(anchor='w', padx=52, pady=(0, 6))
+
+        tk.Label(
+            parent,
+            text=("Keyboard: Tab moves between controls, Ctrl+1 to Ctrl+5 jump "
+                  "to a tab, and Ctrl+Tab cycles through them."),
+            bg=BG, fg=TEXT2, font=('Segoe UI', 9),
+            wraplength=520, justify='left',
+        ).pack(anchor='w', padx=52, pady=(0, 6))
+
+    def _apply_theme_choice(self) -> None:
+        self.config.set("theme",
+                        "high-contrast" if self._high_contrast.get() else "dark")
+        messagebox.showinfo(
+            "Restart ProtBot",
+            "The colour scheme changes the next time ProtBot starts.",
+            parent=self)
 
     # ── Section: Startup ──────────────────────────────────────────────────────
 
@@ -655,7 +708,7 @@ class SettingsPage(ttk.Frame):
         info_frame.pack(fill='x', padx=24, pady=(4, 16))
 
         tk.Label(info_frame, text="ProtBot",
-                 bg=BG2, fg=ACCENT, font=('Segoe UI', 16, 'bold'),
+                 bg=BG2, fg=ACCENT_TEXT, font=('Segoe UI', 16, 'bold'),
                  ).pack(anchor='w', padx=16, pady=(12, 0))
         tk.Label(info_frame, text=f"Version {_APP_VERSION}",
                  bg=BG2, fg=TEXT2, font=('Segoe UI', 10),

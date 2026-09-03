@@ -43,6 +43,13 @@ DEFAULT_CONFIG: dict = {
     # database from growing for as long as ProtBot stays installed.
     "retention_days": 365,
     "first_run": True,
+    # Which palette the UI draws with: "dark" or "high-contrast". The
+    # high-contrast one meets WCAG AA everywhere with room to spare, for the
+    # European Accessibility Act (AUDIT ST-06). Read once at startup by
+    # ui/theme.py, because the pages bind their colours when they import, so
+    # changing it takes effect at the next launch — which the Settings page
+    # says.
+    "theme": "dark",
     # Privacy consent (see core/consent.py). 0 = never accepted; the app shows
     # the consent gate and records nothing until this matches CONSENT_VERSION.
     "consent_version": 0,
@@ -50,6 +57,11 @@ DEFAULT_CONFIG: dict = {
     "consent_at": "",
     # Device & plan
     "device_id": "",               # 24-char server-assigned ID
+    # The secret half of the sync credential, issued at registration. The id
+    # names the device; this proves it is that device. Sent only in an
+    # Authorization header, never in a payload or a URL, and left out of the
+    # data export. See core/syncclient.py and AUDIT SF-09.
+    "device_token": "",
     "server_url": "https://api-tk3y3h4s3q-uc.a.run.app",  # Firebase Cloud Functions
     # Entitlement is NOT stored here as a plain value any more: that made it a
     # one-word edit in a text file. It lives under "entitlement", signed, and

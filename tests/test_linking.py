@@ -244,6 +244,7 @@ class TestRequestingALink:
 
     def test_a_server_key_becomes_a_session(self, config):
         config.set("device_id", "device-abc")
+        config.set("device_token", "token-device-abc")
         transport = FakeTransport({"/link/new": {"k": KEY}})
 
         session = linking.request_link(config, transport=transport)
@@ -252,6 +253,7 @@ class TestRequestingALink:
 
     def test_an_unreachable_server_says_so(self, config):
         config.set("device_id", "device-abc")
+        config.set("device_token", "token-device-abc")
         with pytest.raises(LinkError, match="Could not reach"):
             linking.request_link(config, transport=FakeTransport({"/link/new": None}))
 
@@ -259,6 +261,7 @@ class TestRequestingALink:
     def test_a_key_the_server_mangled_is_not_displayed(self, config, response):
         # Better to fail here than to draw a QR code that cannot work.
         config.set("device_id", "device-abc")
+        config.set("device_token", "token-device-abc")
         with pytest.raises(LinkError):
             linking.request_link(config,
                                  transport=FakeTransport({"/link/new": response}))
@@ -268,6 +271,7 @@ class TestJoiningALink:
 
     def test_joining_sends_this_devices_id_with_the_key(self, config):
         config.set("device_id", "phone-xyz")
+        config.set("device_token", "token-phone-xyz")
         transport = FakeTransport({"/link/join": {"ok": 1, "grp": "group-1"}})
 
         assert linking.join_link(config, linking.build_payload(KEY),
@@ -278,6 +282,7 @@ class TestJoiningALink:
 
     def test_an_expired_code_is_reported_as_such(self, config):
         config.set("device_id", "phone-xyz")
+        config.set("device_token", "token-phone-xyz")
         with pytest.raises(LinkError, match="expired"):
             linking.join_link(config, KEY,
                               transport=FakeTransport({"/link/join": {"ok": 0}}))
@@ -290,6 +295,7 @@ class TestJoiningALink:
         # Parse first, then send. No point spending a request on a code that
         # cannot possibly be right.
         config.set("device_id", "phone-xyz")
+        config.set("device_token", "token-phone-xyz")
         transport = FakeTransport()
         with pytest.raises(LinkError):
             linking.join_link(config, "not a code", transport=transport)

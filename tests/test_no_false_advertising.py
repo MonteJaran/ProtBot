@@ -22,12 +22,25 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # a different thing entirely — that is what the scan is for.
 BRAND_SCAN_EXEMPT = {os.path.join("core", "apps_list.py")}
 
+# Directories holding copies of the source rather than the source. The project
+# is installable now, so `python -m build` and PyInstaller both leave a tree of
+# duplicated modules behind — scanning those means every finding is reported
+# twice, and an exemption keyed on a path stops matching its own copy.
+GENERATED_DIRS = {".git", "build", "dist", "__pycache__", ".venv", "venv",
+                  ".pytest_cache", ".ruff_cache"}
+
+
+def _is_generated(dirpath: str) -> bool:
+    relative = os.path.relpath(dirpath, REPO_ROOT)
+    return any(part in GENERATED_DIRS for part in relative.split(os.sep))
+
+
 SOURCE_FILES = [
     os.path.join(dirpath, name)
     for dirpath, _dirs, files in os.walk(REPO_ROOT)
     for name in files
     if name.endswith(".py")
-    and ".git" not in dirpath
+    and not _is_generated(dirpath)
     and f"{os.sep}tests" not in dirpath
 ]
 

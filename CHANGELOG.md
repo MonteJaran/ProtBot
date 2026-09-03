@@ -67,6 +67,18 @@ any of it. The first entry under a real version number will be written when
   config check, `pip-audit` against the pinned lockfile, and the Android rule
   tests.
 
+- **A high-contrast colour scheme**, in Settings under Accessibility. Every
+  text and control contrast in it clears the WCAG AA minimum with room to
+  spare, and body text clears AAA. Takes effect at the next start.
+- **Keyboard navigation between tabs.** Ctrl+1 to Ctrl+5 jump straight to one,
+  Ctrl+Tab and Ctrl+Shift+Tab cycle, and the tab strip is now a stop in the
+  Tab order so the arrow keys move between tabs as they do in other Windows
+  applications.
+- **A software bill of materials** in CycloneDX format, generated from the
+  lockfile and shipped inside the build, for Regulation (EU) 2024/2847 (the
+  Cyber Resilience Act).
+- **ProtBot is an installable Python package**, with a `protbot` entry point.
+
 ### Changed
 
 - **Renamed from FocusGuard to ProtBot**, including the data directory.
@@ -81,6 +93,16 @@ any of it. The first entry under a real version number will be written when
 - **Dependencies are pinned by exact version and SHA-256 hash**
   (`requirements.lock`).
 
+- **Device sync is authenticated.** Registering a device now issues a secret
+  token as well as an id, and every request to the server carries it in an
+  `Authorization` header. The device id was previously the whole credential,
+  and it is an identifier rather than a secret — it is shown in the Devices
+  tab and travels in every payload. Nothing is sent without a token, and a
+  server that refuses the credential stops sync with an explanation instead of
+  retrying it every half hour.
+- **Every colour is defined in one place** (`ui/theme.py`) rather than copied
+  into six files, which is what makes the high-contrast scheme possible.
+
 ### Fixed
 
 - **Usage accrued while the machine was asleep.** Closing the lid overnight
@@ -91,6 +113,19 @@ any of it. The first entry under a real version number will be written when
 - **A blocked app was never actually blocked.** The `-1` sentinel multiplied
   out to a negative limit and produced a 0% usage reading. All limit reads go
   through one function now.
+- **Four places where text did not have enough contrast to be readable**:
+  secondary text on the darkest surface, the accent colour used as text, the
+  white label on a primary button, and the label on a destructive button. All
+  four looked fine and measured between 3.6:1 and 4.2:1, under the 4.5:1 that
+  WCAG AA asks for.
+- **Controls had no visible keyboard focus.** The default focus indicator is a
+  dotted outline in the text colour, which on a dark background cannot be
+  seen — so a keyboard user had no way to tell which control they were on.
+- **Two parts of the interface talked to the server directly**, without a
+  credential, over a connection that was allowed to be unencrypted, with the
+  device id in the URL. The Devices tab was one of them, which meant the
+  authenticated client the rest of the app used was bypassed at exactly the
+  moment the device was registered.
 - **ProtBot could close critical Windows processes**, the shell, Task Manager,
   security software, or itself. `core/protected.py` is enforced in three
   places, not just in the dialog that adds an app.

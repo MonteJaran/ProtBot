@@ -11,18 +11,19 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 
-# ── Color Scheme ─────────────────────────────────────────────────────────────
-log = get_logger("ui.processes")
+# ── Colours ──────────────────────────────────────────────────────────────────
+# The palette, the high-contrast variant and the WCAG contrast checks all live
+# in ui/theme.py (AUDIT ST-06). This used to be nine hex literals copied into
+# six files, which is what made a high-contrast mode impossible to add — there
+# was no single thing to swap, and no single thing to measure.
+from ui.theme import (  # noqa: F401
+    ACCENT, ACCENT_TEXT, BG, BG2, BG3, BORDER, DANGER_BG, ERROR, FOCUS,
+    ON_ACCENT, ON_DANGER, SUCCESS, TEXT, TEXT2, TEXT3, WARNING,
+)
 
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
+# ── Color Scheme ─────────────────────────────────────────────────────────────
+
+log = get_logger("ui.processes")
 
 
 def _fmt_sec(seconds: int) -> str:
@@ -42,8 +43,10 @@ class ProcessesPage(ttk.Frame):
         self.config = config
         self.monitor = monitor
         self.configure(style='TFrame')
-        self._synced_usage: dict = {}   # server_app_id → total_sec (legacy)
-        self._app_details: list = []    # list of {devId, serverId, name, category, sec, isOwn}
+        # local app id → seconds used today on the user's *other* devices.
+        # Filled from the running sync client; empty whenever sync is off, or
+        # the group figure is too old or too stale-dated to enforce against.
+        self._remote_usage: dict = {}
         self._linked_device_count: int = 1
         self._build_ui()
         self.refresh()
@@ -214,33 +217,21 @@ class ProcessesPage(ttk.Frame):
             if selected_app_id and app_id == selected_app_id:
                 restore_iid = iid
 
-        # ── Cross-device rows (from Firebase sync via appDetails) ─────────────
-        # Use the resolved appDetails list so we show real names instead of "App #X".
-        # Only show entries that do NOT belong to this device (isOwn=False).
-        for detail in self._app_details:
-            if detail.get("isOwn", True):
-                continue   # already shown under "This PC" above
-            sec  = detail.get("sec", 0)
-            name = detail.get("name") or f"App #{detail.get('serverId', '?')}"
-            cat  = detail.get("category", "—")
-
-            # Use device name from server if available
-            dev_name     = detail.get("deviceName")
-            dev_platform = detail.get("devicePlatform") or ""
-            if dev_name:
-                if "Android" in dev_platform:
-                    dev_label = f"\U0001f4f1 {dev_name}"
-                elif dev_platform == "Windows":
-                    dev_label = f"\U0001f5a5 {dev_name}"
-                else:
-                    dev_label = f"\U0001f4f2 {dev_name}"
-            else:
-                dev_label = "\U0001f4f1 Mobile"
-
-            iid  = self._tree.insert(
+        # ── Cross-device rows ────────────────────────────────────────────────
+        # One row per app that has time on the user's other devices, using the
+        # names this device already knows. The protocol carries seconds per
+        # app, not per app per device (server/models.py, SyncResp), so these
+        # are labelled "Other devices" rather than named — saying which phone
+        # would mean inventing a field no server is specified to send.
+        for app in apps:
+            seconds = int(self._remote_usage.get(app["id"], 0))
+            if seconds <= 0:
+                continue
+            self._tree.insert(
                 "", 'end',
-                values=(dev_label, name, cat,
-                        "\u2014 Remote", _fmt_sec(sec), "\u2014",
+                values=("\U0001f4f1 Other devices", app["name"],
+                        app["category"] or "\u2014",
+                        "\u2014 Remote", _fmt_sec(seconds), "\u2014",
                         "\u2014", "\u2014", "\u2014"),
                 tags=('mobile',),
             )
@@ -284,40 +275,57 @@ class ProcessesPage(ttk.Frame):
         self.after(800, self.refresh)
 
     # ── Cross-device sync ─────────────────────────────────────────────────────
+    #
+    # This page used to fetch its own copy of the group totals, with
+    #
+    #     GET {server_url}/sync/{device_id}
+    #
+    # on a fifteen-minute timer. That is AUDIT SF-09 exactly: no credential at
+    # all, and the device id — which was the only thing standing between a
+    # stranger and this user's data — in a URL path, where it lands in every
+    # access log between here and the server. It also parsed an `appDetails`
+    # field the protocol does not define (server/models.py), so it was reading
+    # a response no server was ever specified to send.
+    #
+    # The app already runs one sync client, on its own thread, authenticated,
+    # with the staleness and clamping rules in core/syncproto.py behind it. A
+    # view should read what that client holds rather than keep a second,
+    # weaker copy. Nothing here does I/O now.
 
     def _schedule_sync(self) -> None:
-        """Sync cross-device data every 15 minutes."""
+        """Re-read the sync client's totals every fifteen minutes."""
         self._do_sync()
         self.after(900_000, self._schedule_sync)
 
     def _do_sync(self) -> None:
-        """Fetch synced usage from all linked devices in background thread."""
-        import threading
-        import urllib.request
-        import json as _json
+        """
+        Refresh the cross-device figures from the running sync client.
 
-        device_id = self.config.get("device_id", "")
-        server_url = self.config.get("server_url", "")
-        if not device_id or not server_url:
+        Reads memory only, so it runs on the Tk thread with no worker and no
+        network. Wrapped whole because this is called on a timer: a failure
+        here must cost one refresh, not the page.
+        """
+        client = getattr(self.monitor, "sync_client", None)
+        if client is None:
             return
+        try:
+            status = client.status()
+            if not status.get("enabled"):
+                self._remote_usage = {}
+                self._linked_device_count = 1
+                return
 
-        def _fetch():
-            try:
-                url = f"{server_url}/sync/{device_id}"
-                req = urllib.request.Request(url, method="GET")
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = _json.loads(resp.read().decode())
-                    self._synced_usage = data.get("apps", {})
-                    self._app_details  = data.get("appDetails", [])
-                    self._linked_device_count = data.get("devices", 1)
-                    self.after(0, self.refresh)
-            except Exception as e:
-                # Sync is best-effort, but a persistent failure needs to be
-                # findable rather than swallowed.
-                log.warning("Device sync failed: %s", e)
-
-        t = threading.Thread(target=_fetch, daemon=True)
-        t.start()
+            remote = {}
+            for app in self.db.get_all_tracked_apps():
+                seconds = int(client.remote_seconds_for(app["id"]) or 0)
+                if seconds > 0:
+                    remote[app["id"]] = seconds
+            self._remote_usage = remote
+            # The client knows how many devices it is syncing with only as
+            # "more than this one", so this is 1 + whether anything came back.
+            self._linked_device_count = 1 + len(self.config.get("linked_devices") or [])
+        except Exception as e:
+            log.warning("Could not read cross-device usage: %s", e)
 
     # ── Set Limits ────────────────────────────────────────────────────────────
 

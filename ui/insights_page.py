@@ -6,15 +6,15 @@ Refreshed only when the tab is selected, so scroll position is never lost.
 import tkinter as tk
 from tkinter import ttk
 
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
+# ── Colours ──────────────────────────────────────────────────────────────────
+# The palette, the high-contrast variant and the WCAG contrast checks all live
+# in ui/theme.py (AUDIT ST-06). This used to be nine hex literals copied into
+# six files, which is what made a high-contrast mode impossible to add — there
+# was no single thing to swap, and no single thing to measure.
+from ui.theme import (  # noqa: F401
+    ACCENT, ACCENT_TEXT, BG, BG2, BG3, BORDER, DANGER_BG, ERROR, FOCUS,
+    ON_ACCENT, ON_DANGER, SUCCESS, TEXT, TEXT2, TEXT3, WARNING,
+)
 GOLD    = '#f59e0b'
 PURPLE  = '#8b5cf6'
 CYAN    = '#06b6d4'
@@ -137,7 +137,7 @@ class InsightsPage(ttk.Frame):
                  bg=BG, fg=TEXT2, font=('Segoe UI', 10)).pack(side='left', pady=4)
         ttk.Separator(self._inner).pack(fill='x', padx=16, pady=(4, 8))
 
-    def _section(self, title, color=ACCENT):
+    def _section(self, title, color=ACCENT_TEXT):
         tk.Label(self._inner, text=title, bg=BG, fg=color,
                  font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=16, pady=(10, 2))
         f = tk.Frame(self._inner, bg=BG)
@@ -170,7 +170,7 @@ class InsightsPage(ttk.Frame):
             cat  = app.get("category", "Custom")
             is_bad  = cat in _DISTRACTING
             is_good = cat in _PRODUCTIVE
-            time_color = ERROR if is_bad else (SUCCESS if is_good else ACCENT)
+            time_color = ERROR if is_bad else (SUCCESS if is_good else ACCENT_TEXT)
 
             card = self._card(f, col=i, row=0)
             tk.Label(card, text=medals[i], bg=BG2, fg=m_color[i],

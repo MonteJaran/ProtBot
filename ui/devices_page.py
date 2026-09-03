@@ -6,35 +6,41 @@ Sections
 1. This Device   — device ID, copy, server registration
 2. Linked Devices — list, link-new (8-char code), join-with-code
 3. Your Plan     — freemium vs premium feature comparison + upgrade CTA
+
+Every server call on this page goes through `core.syncclient`. It used to have
+a private `_api()` helper built straight on urllib, and a second HTTP client is
+not a duplication so much as a hole: that one sent no credential, allowed plain
+http, put the device id in a URL path, and used an endpoint name the protocol
+does not define. It registered the device — so the tested, authenticated client
+in core/ was the half of the app that never actually ran.
+
+There is one rule here now, and it is worth keeping: this page does no HTTP of
+its own. If something new needs the server, it goes in core/ where the
+transport attaches the token and the tests can reach it.
 """
 
-import json
 import threading
 import tkinter as tk
 import webbrowser
 from tkinter import messagebox, ttk
 
-from core import licensing
+from core import licensing, linking, syncclient
 from core.logging_setup import get_logger
+
+# ── Colours ──────────────────────────────────────────────────────────────────
+# The palette, the high-contrast variant and the WCAG contrast checks all live
+# in ui/theme.py (AUDIT ST-06). This used to be nine hex literals copied into
+# six files, which is what made a high-contrast mode impossible to add — there
+# was no single thing to swap, and no single thing to measure.
+from ui.theme import (  # noqa: F401
+    ACCENT, ACCENT_HOVER, ACCENT_TEXT, BG, BG2, BG3, BORDER, DANGER_BG,
+    DANGER_HOVER, ERROR, FOCUS, ON_ACCENT, ON_DANGER, SUCCESS, TEXT, TEXT2,
+    TEXT3, WARNING,
+)
 
 log = get_logger("devices")
 
-try:
-    from urllib.request import urlopen, Request
-except ImportError:
-    urlopen = None
 
-# ── Colour palette (matches app.py) ──────────────────────────────────────────
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-TEXT3   = '#6a6a7a'   # dimmed — used for not-yet-built ("planned") features
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
 GOLD    = '#fbbf24'
 PURPLE  = '#a78bfa'
 
@@ -77,24 +83,6 @@ _PLANNED_FEATURES = [
     "Team challenges & leaderboards",
     "Priority support",
 ]
-
-
-def _api(config, method: str, path: str, body: dict = None):
-    """
-    Minimal synchronous API call to the Firebase Cloud Functions endpoint.
-    Returns (status_code, response_dict) or raises URLError / HTTPError.
-    """
-    base = (config.get("server_url") or "").rstrip("/")
-    if not base:
-        raise ValueError("Server URL not configured — go to Settings.")
-
-    url  = f"{base}/{path.lstrip('/')}"
-    data = json.dumps(body).encode() if body else None
-    headers = {"Content-Type": "application/json"}
-
-    req  = Request(url, data=data, headers=headers, method=method)
-    with urlopen(req, timeout=10) as resp:
-        return resp.status, json.loads(resp.read().decode())
 
 
 class DevicesPage(ttk.Frame):
@@ -203,10 +191,10 @@ class DevicesPage(ttk.Frame):
             id_lbl.pack(side='left', fill='x', expand=True)
 
             tk.Button(id_frame, text="Copy",
-                      bg=ACCENT, fg='#fff',
+                      bg=ACCENT, fg=ON_ACCENT,
                       font=('Segoe UI', 9, 'bold'),
                       relief='flat', bd=0, padx=10, pady=6,
-                      activebackground='#c73652', activeforeground='#fff',
+                      activebackground=ACCENT_HOVER, activeforeground=ON_ACCENT,
                       cursor='hand2',
                       command=lambda: self._copy(dev_id)).pack(side='right', padx=4, pady=4)
 
@@ -241,11 +229,11 @@ class DevicesPage(ttk.Frame):
                      justify='left', anchor='w').pack(fill='x', pady=(0, 10))
 
             self._reg_btn = tk.Button(card, text="Register This Device",
-                                      bg=ACCENT, fg='#fff',
+                                      bg=ACCENT, fg=ON_ACCENT,
                                       font=('Segoe UI', 10, 'bold'),
                                       relief='flat', bd=0, padx=16, pady=8,
-                                      activebackground='#c73652',
-                                      activeforeground='#fff',
+                                      activebackground=ACCENT_HOVER,
+                                      activeforeground=ON_ACCENT,
                                       cursor='hand2',
                                       command=self._register_device)
             self._reg_btn.pack(anchor='w')
@@ -314,7 +302,7 @@ class DevicesPage(ttk.Frame):
                   bg=BG3, fg=TEXT,
                   font=('Segoe UI', 9),
                   relief='flat', bd=0, padx=12, pady=6,
-                  activebackground=ACCENT, activeforeground='#fff',
+                  activebackground=ACCENT, activeforeground=ON_ACCENT,
                   cursor='hand2',
                   command=self._show_join_dialog).pack(side='left')
 
@@ -348,7 +336,7 @@ class DevicesPage(ttk.Frame):
                       bg='#0d1e38', fg=ERROR,
                       font=('Segoe UI', 9),
                       relief='flat', bd=0, padx=8,
-                      activebackground='#7f1d1d', activeforeground=ERROR,
+                      activebackground=DANGER_HOVER, activeforeground=ON_DANGER,
                       cursor='hand2',
                       command=on_remove).pack(side='right', padx=6, pady=4)
 
@@ -427,6 +415,27 @@ class DevicesPage(ttk.Frame):
 
     # ── Helpers: API calls ────────────────────────────────────────────────────
 
+    def _registered(self, message: str) -> bool:
+        """
+        Whether this device holds a complete sync credential, warning if not.
+
+        Both halves are required. An install carrying an id and no token is one
+        where registration half-completed, and every server call it makes will
+        be refused locally — so saying "register this device first" is both the
+        accurate diagnosis and the fix.
+        """
+        if not (self.config.get("server_url") or ""):
+            messagebox.showwarning(
+                "Server Not Configured",
+                "Enter the Firebase function URL in Settings > Server URL first.",
+                parent=self)
+            return False
+        if not (self.config.get("device_id") or "") or \
+                not (self.config.get("device_token") or ""):
+            messagebox.showwarning("Not Ready", message, parent=self)
+            return False
+        return True
+
     def _register_device(self):
         # Prevent double-fire (button click + Enter key race, or window-switch retry)
         if self._registering:
@@ -460,14 +469,16 @@ class DevicesPage(ttk.Frame):
             try:
                 import socket
                 hostname = socket.gethostname() or "Windows PC"
-                body = {"n": hostname, "p": "Windows"}
-                if email:
-                    body["e"] = email
-                _, resp = _api(self.config, "POST", "/r", body)
-                dev_id = resp.get("id", "")
+                # register_device stores the device id *and* the token, and
+                # stores neither if the server returns only the id. Doing it
+                # here by hand is what left the app with an id it was using as
+                # a credential — AUDIT SF-09.
+                dev_id = syncclient.register_device(
+                    self.config, device_name=hostname, email=email)
                 if not dev_id:
-                    raise ValueError("No ID returned from server.")
-                self.config.set("device_id", dev_id)
+                    raise ValueError(
+                        "The server did not complete the registration. "
+                        "Check the server URL in Settings and try again.")
                 self.after(0, lambda: self._reg_done(dev_id))
             except Exception as exc:
                 # Bind the value into the lambda: `exc` is deleted when the
@@ -498,18 +509,16 @@ class DevicesPage(ttk.Frame):
             self._reg_status.config(text=f"Error: {msg}", fg=ERROR)
 
     def _generate_link_key(self):
-        server = self.config.get("server_url") or ""
-        dev_id = self.config.get("device_id") or ""
-        if not server or not dev_id:
-            messagebox.showwarning("Not Ready",
-                                   "Register this device first.", parent=self)
+        if not self._registered("Register this device first."):
             return
 
         def _do():
             try:
-                _, resp = _api(self.config, "POST", "/link/new", {"d": dev_id})
-                key = resp.get("k", "")
-                self.after(0, lambda: self._show_link_key(key))
+                # request_link validates the key the server sends before it
+                # reaches a QR encoder: a code that cannot work is worse drawn
+                # than not drawn, because the user finds out at the phone.
+                session = linking.request_link(self.config)
+                self.after(0, lambda: self._show_link_key(session.key))
             except Exception as exc:
                 self.after(0, lambda e=exc: messagebox.showerror(
                     "Error", str(e), parent=self))
@@ -569,7 +578,7 @@ class DevicesPage(ttk.Frame):
                  font=('Courier New', 22, 'bold'), padx=20, pady=8,
                  ).pack(fill='x', padx=24)
 
-        tk.Button(popup, text="Copy Code", bg=ACCENT, fg='#fff',
+        tk.Button(popup, text="Copy Code", bg=ACCENT, fg=ON_ACCENT,
                   font=('Segoe UI', 9, 'bold'), relief='flat', bd=0,
                   padx=14, pady=6,
                   command=lambda: self._copy(session.key)).pack(pady=(10, 2))
@@ -646,10 +655,7 @@ class DevicesPage(ttk.Frame):
             1000, lambda: self._tick_link_countdown(popup, session))
 
     def _show_join_dialog(self):
-        dev_id = self.config.get("device_id") or ""
-        if not dev_id:
-            messagebox.showwarning("Not Ready",
-                                   "Register this device first.", parent=self)
+        if not self._registered("Register this device first."):
             return
 
         dialog = tk.Toplevel(self)
@@ -683,9 +689,7 @@ class DevicesPage(ttk.Frame):
 
             def _do():
                 try:
-                    _, resp = _api(self.config, "POST", "/link/join",
-                                   {"d": dev_id, "k": code})
-                    grp = resp.get("grp", "")
+                    grp = linking.join_link(self.config, code)
                     self.after(0, lambda: self._join_done(dialog, grp))
                 except Exception as exc:
                     self.after(0, lambda e=exc: status_lbl.config(
@@ -707,16 +711,29 @@ class DevicesPage(ttk.Frame):
         self._refresh_group_devices()
 
     def _refresh_group_devices(self):
-        """Fetch group member list from server, update config, repopulate UI."""
+        """
+        Fetch the group member list, update config, repopulate the UI.
+
+        A POST carrying the device id in the body, not a GET carrying it in
+        the path. The path is the version that lands in every access log
+        between here and the server, which was the concrete half of AUDIT
+        SF-09; the token authenticates the request either way, but a
+        credential-adjacent identifier still has no business in a URL.
+        """
         dev_id     = self.config.get("device_id") or ""
+        token      = self.config.get("device_token") or ""
         server_url = self.config.get("server_url") or ""
-        if not dev_id or not server_url:
+        if not dev_id or not token or not server_url:
             self._populate()
             return
 
         def _fetch():
             try:
-                _, data = _api(self.config, "GET", f"/group/{dev_id}")
+                data = syncclient.transport_for(self.config).post(
+                    "/group", {"d": dev_id})
+                if not isinstance(data, dict):
+                    self.after(0, self._populate)
+                    return
                 others = [
                     {
                         "id":        d["id"],
@@ -786,7 +803,7 @@ class DevicesPage(ttk.Frame):
 
     def _section_header(self, parent, text: str):
         tk.Label(parent, text=text,
-                 bg=BG, fg=ACCENT,
+                 bg=BG, fg=ACCENT_TEXT,
                  font=('Segoe UI', 11, 'bold')).pack(
             anchor='w', padx=18, pady=(16, 6))
 

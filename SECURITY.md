@@ -34,7 +34,7 @@ ProtBot is a desktop application. The interesting parts are:
 |---|---|
 | Process termination | ProtBot can close other programs. `core/protected.py` is the denylist that stops it closing the shell, Task Manager, security software or itself. A way past that list is a serious finding. |
 | The licence gate | `core/licensing.py` is HMAC-signed and machine-bound. **Client-side licensing is deterrence, not security** — see below — but a way to forge a signature is still worth reporting. |
-| Device sync | `core/syncclient.py` uploads usage totals. It refuses plain http and clamps everything it reads back. Anything that gets undisclosed data onto the wire is in scope. |
+| Device sync | `core/syncclient.py` uploads usage totals. It refuses plain http, refuses to send anything without a device token, and clamps everything it reads back. Anything that gets undisclosed data onto the wire, or onto it unauthenticated, is in scope. |
 | The update check | `core/updates.py` fetches a manifest and will only hand an `https://` link to the browser. It never downloads or executes anything. |
 | Stored data | The SQLite database and the log hold a record of every app opened. Neither is encrypted; see "Known and accepted" below. |
 
@@ -52,10 +52,14 @@ fine — you will just get this section back.
   attacker who already has the account gains nothing real, because the key
   would have to live in the same place. `PRIVACY.md` states this plainly
   rather than implying protection that is not there.
-- **The device id is the sync credential and travels in a URL path**, where it
-  lands in server and proxy logs. This one is a genuine weakness, tracked as
-  AUDIT SF-09 and item 1 of the coding list in `STATUS.md`. It is named here
-  because you would find it anyway.
+- **The sync server does not exist yet, so its half of authentication is
+  unproven.** The client now issues no request without a device token in an
+  `Authorization` header, keeps the device id out of URL paths, and treats a
+  401 or 403 as permanent rather than retrying a rejected credential
+  (AUDIT SF-09). What that buys depends entirely on the server checking the
+  token *before* the device id in the payload, and there is no server to
+  check. `server/models.py` states the obligation; until something implements
+  it, treat the sync API as unaudited.
 
 ## Supported versions
 

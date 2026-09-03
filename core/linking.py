@@ -42,6 +42,9 @@ carefully:
 
   * The server issues it valid for five minutes (LinkNewResp).
   * It is single-use.
+  * Asking for one and redeeming one are both authenticated: the requests
+    carry this device's token, so a link code cannot be minted or spent by
+    anyone who merely knows a device id (AUDIT SF-09).
   * `LINK_DISPLAY_SECONDS` stops the PC displaying it past that, so a code
     left on screen while its owner goes to lunch is not still live.
 
@@ -223,6 +226,28 @@ class LinkSession:
         return f"{self.key[:half]} {self.key[half:]}"
 
 
+def _registered_id(config) -> str:
+    """
+    This device's id, or raise with something the user can act on.
+
+    Linking needs both halves of the sync credential: the id names the device
+    to the server and the token proves it is that device (AUDIT SF-09). Either
+    one missing means the same thing to the user — this device is not
+    registered — and both produce the same instruction, so they get one
+    message rather than two that read alike.
+
+    Checked here rather than left to the transport, which would refuse the
+    request but only say the server could not be reached.
+    """
+    device_id = str(config.get("device_id", "") or "").strip()
+    token = str(config.get("device_token", "") or "").strip()
+    if not device_id or not token:
+        raise LinkError(
+            "Register this device for sync before linking another one."
+        )
+    return device_id
+
+
 def request_link(config, transport=None) -> LinkSession:
     """
     Ask the server for a link key and start a session.
@@ -234,13 +259,8 @@ def request_link(config, transport=None) -> LinkSession:
     """
     from core import syncclient
 
-    device_id = str(config.get("device_id", "") or "").strip()
-    if not device_id:
-        raise LinkError(
-            "Register this device for sync before linking another one."
-        )
-
-    transport = transport or syncclient.Transport(config.get("server_url", ""))
+    device_id = _registered_id(config)
+    transport = transport or syncclient.transport_for(config)
     response = transport.post("/link/new", {"d": device_id})
     if not isinstance(response, dict):
         raise LinkError("Could not reach the sync server. Check your connection.")
@@ -264,13 +284,8 @@ def join_link(config, key: str, transport=None) -> str:
 
     key = parse_payload(key)
 
-    device_id = str(config.get("device_id", "") or "").strip()
-    if not device_id:
-        raise LinkError(
-            "Register this device for sync before joining another device."
-        )
-
-    transport = transport or syncclient.Transport(config.get("server_url", ""))
+    device_id = _registered_id(config)
+    transport = transport or syncclient.transport_for(config)
     response = transport.post("/link/join", {"d": device_id, "k": key})
     if not isinstance(response, dict):
         raise LinkError("Could not reach the sync server. Check your connection.")

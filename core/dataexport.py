@@ -22,14 +22,21 @@ recipient can load it, not that it opens in a spreadsheet. `ui/processes_page`
 already exports usage as CSV for people who want a spreadsheet; that is a
 convenience, and this is the complete record.
 
-Two things are deliberately excluded, both because including them would make
+Three things are deliberately excluded, all because including them would make
 the export itself a hazard:
 
   * **The entitlement blob.** It is signed and machine-bound; a copy in a file
     the user might email is a licence key sitting in their outbox.
+  * **The sync credentials.** `device_token` is a bearer credential — whoever
+    holds it can read this device group's usage from the server — and
+    `device_id` names the device it unlocks. An export is a file people send
+    to someone, which is the one place a live credential must not be.
   * **The diagnostic log.** It is a plaintext record of every app opened, it
     can be megabytes, and it is already separately deletable. The export says
     where it is instead of inlining it.
+
+None of the three is data *about* the user in the sense Art. 15 means, so
+leaving them out does not make the export a partial answer.
 """
 
 import json
@@ -48,7 +55,8 @@ EXPORT_FORMAT_VERSION = 1
 # either a credential or points at one.
 _EXCLUDED_SETTINGS = frozenset({
     "entitlement",     # signed licence blob, machine-bound
-    "device_id",       # the sync credential: it travels in the URL path
+    "device_token",    # the sync credential: whoever holds it is this device
+    "device_id",       # names the device the token unlocks; no use apart from it
     "server_app_ids",  # meaningless without the device id, and tied to it
 })
 

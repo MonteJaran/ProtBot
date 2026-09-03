@@ -50,6 +50,15 @@ Step 'Generating the Windows version resource'
 python packaging\make_version_info.py
 Ok 'version_info.txt written'
 
+# ── Bill of materials ────────────────────────────────────────────────────────
+# Regulation (EU) 2024/2847 requires one for a product sold in the EU. Written
+# before PyInstaller runs so the spec can ship it inside the build: an SBOM
+# that exists only in CI is not "accompanying the product".
+Step 'Generating the bill of materials'
+python packaging\sbom.py --output packaging\protbot.cdx.json
+if ($LASTEXITCODE -ne 0) { throw 'SBOM generation failed.' }
+Ok 'packaging\protbot.cdx.json written'
+
 # ── PyInstaller ──────────────────────────────────────────────────────────────
 Step 'Building the executable'
 python -m PyInstaller packaging\protbot.spec --noconfirm --clean

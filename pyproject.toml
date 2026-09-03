@@ -1,3 +1,10 @@
+# The project was importable only because main.py inserted its own directory
+# into sys.path (AUDIT ST-04). It declares a build backend now, so it can be
+# installed like anything else and the hack is gone.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "protbot"
 version = "1.0.0"   # keep in sync with core/version.py (a test enforces this)
@@ -9,7 +16,10 @@ requires-python = ">=3.10"
 license = "LicenseRef-Proprietary"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 classifiers = [
-    "License :: Other/Proprietary License",
+    # No "License :: ..." classifier. PEP 639 superseded those with the
+    # `license` expression above, and setuptools now refuses to build a
+    # project that carries both — which is why this could not be packaged
+    # until someone tried.
     "Environment :: Win32 (MS Windows)",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
@@ -19,6 +29,27 @@ dependencies = [
     "psutil>=5.9.0",
     "plyer>=2.1.0",
 ]
+
+# A GUI entry point, not a console one: on Windows `gui-scripts` produces a
+# launcher built on pythonw.exe, so starting ProtBot does not also open a
+# console window that stays for the life of the app.
+[project.gui-scripts]
+protbot = "ui.launcher:main"
+
+[tool.setuptools]
+# Listed rather than discovered. Automatic discovery at the repository root
+# also finds `tests`, `packaging` and `server` — none of which belong in an
+# install, and `server` least of all: it is the wire contract for a service,
+# not part of the application.
+packages = ["core", "ui"]
+
+# No package-data. `ProtBot.ico` and `PRIVACY.md` sit at the repository root
+# rather than inside a package, so a wheel does not carry them — and it does
+# not need to. The shipping artifact is the PyInstaller build, whose spec
+# bundles both explicitly; the wheel exists so the project is installable and
+# `main.py` no longer has to edit sys.path. Both call sites already degrade
+# when the files are absent: `core.tray` passes an empty icon path and shows
+# no icon, and `core.consent.open_policy` falls back to the published URL.
 
 [project.optional-dependencies]
 dev = [

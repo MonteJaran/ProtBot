@@ -10,16 +10,15 @@ from tkinter import ttk, filedialog, messagebox
 from core.apps_list import DEFAULT_APPS, APP_CATEGORIES, find_app_path, find_main_exe_in_folder
 from core.protected import is_protected, protection_reason
 
-# ── Color Scheme (mirrors app.py) ────────────────────────────────────────────
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
+# ── Colours ──────────────────────────────────────────────────────────────────
+# The palette, the high-contrast variant and the WCAG contrast checks all live
+# in ui/theme.py (AUDIT ST-06). This used to be nine hex literals copied into
+# six files, which is what made a high-contrast mode impossible to add — there
+# was no single thing to swap, and no single thing to measure.
+from ui.theme import (  # noqa: F401
+    ACCENT, ACCENT_TEXT, BG, BG2, BG3, BORDER, DANGER_BG, ERROR, FOCUS,
+    ON_ACCENT, ON_DANGER, SUCCESS, TEXT, TEXT2, TEXT3, WARNING,
+)
 
 
 class FilesPage(ttk.Frame):
@@ -85,7 +84,7 @@ class FilesPage(ttk.Frame):
         self._tree.pack(fill='both', expand=True)
 
         # Tag colours for status
-        self._tree.tag_configure('running', foreground=ACCENT)
+        self._tree.tag_configure('running', foreground=ACCENT_TEXT)
         self._tree.tag_configure('found',   foreground=SUCCESS)
         self._tree.tag_configure('missing', foreground=ERROR)
 

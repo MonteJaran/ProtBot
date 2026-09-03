@@ -238,10 +238,16 @@ def test_no_user_facing_text_still_says_the_old_name():
         "tests/test_rename_migration.py",
     }
 
+    # Build output holds copies of the source. The project is installable now,
+    # so `python -m build` leaves one behind, and scanning it reports every
+    # file twice under a path no exemption matches.
+    generated = {".git", "build", "dist", "__pycache__", ".venv", "venv",
+                 ".pytest_cache", ".ruff_cache"}
+
     offenders = []
     for path in list(repo_root.rglob("*.py")) + list(repo_root.rglob("*.iss")):
         rel = path.relative_to(repo_root).as_posix()
-        if ".git" in rel or "__pycache__" in rel or rel in allowed:
+        if generated & set(rel.split("/")) or rel in allowed:
             continue
         if "focusguard" in path.read_text(encoding="utf-8").lower():
             offenders.append(rel)

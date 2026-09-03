@@ -26,6 +26,41 @@ Four properties this has to hold, and the reasoning for each:
     a limit looser than what this device measured itself; see
     syncproto.merge_app_total.
 
+  * **Every request carries a credential the device id is not.** Registration
+    issues a secret token; every later request sends it in an `Authorization`
+    header, and this module refuses to send one without it. See below.
+
+## The device token (AUDIT SF-09)
+
+The device id used to be the whole credential. That is an identifier, not a
+secret: it travels in payloads, it is shown in the Devices tab, and in the
+shape this protocol started out with it sat in a URL path, where it lands in
+server, proxy and intermediary logs. Anyone who read one out of a log could
+read that user's usage — textbook IDOR.
+
+So registration now returns two things: the id, which names the device, and a
+token, which proves you are it. Four rules follow, and each is enforced here
+rather than left to the server:
+
+  * **The token goes in a header, never in a URL or a payload.** Request
+    bodies are logged by some proxies; query strings are logged by nearly all
+    of them. `Authorization` is the one place with an established convention
+    of being redacted.
+
+  * **No token means no request.** `/register` is the sole exception, because
+    it is where the token comes from. Everything else is refused locally
+    rather than sent unauthenticated and left for the server to reject —
+    an unauthenticated request is the vulnerability, not the error message.
+
+  * **A refusal is not a network failure.** 401 and 403 mean the credential is
+    wrong; retrying every half hour will never make it right. Sync stops and
+    says so, until the user registers the device again. Every other failure
+    keeps its backoff.
+
+  * **Registration is all-or-nothing.** A server that returns an id but no
+    token leaves nothing stored. Half a registration is a device id being
+    used as a credential again, which is the thing being fixed.
+
 There is no server implementing this yet. The endpoint paths and payloads come
 from server/models.py, and the client is tested against a fake transport, so
 what is verified is the client's behaviour on every response shape — including
@@ -61,27 +96,79 @@ ENDPOINT_APPS = "/apps"
 ENDPOINT_UPLOAD = "/upload"
 ENDPOINT_SYNC = "/sync"
 
+# The only endpoint that runs before there is a credential, because it is
+# where the credential comes from. Transport.post refuses every other path
+# without a token rather than sending it unauthenticated.
+UNAUTHENTICATED_ENDPOINTS = frozenset({ENDPOINT_REGISTER})
+
+# A wrong credential, as opposed to a bad network. The difference matters:
+# one is worth retrying and the other never will be.
+AUTH_FAILURE_STATUSES = frozenset({401, 403})
+
 
 class Transport:
     """
-    One HTTP POST, returning parsed JSON or None.
+    One authenticated HTTP POST, returning parsed JSON or None.
 
     A class rather than a function so tests can pass a fake in and exercise
     every response shape — timeout, 500, HTML error page, valid JSON with the
     wrong types — without a network or a server.
+
+    `token` is the device token, either a string or a zero-argument callable
+    returning one. A callable is what callers should pass: a transport is
+    built once, at startup, and the token does not exist until the user
+    registers. Copying the value in would freeze an empty credential for the
+    life of the process, and sync would stay broken until the app restarted.
     """
 
-    def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT) -> None:
+    def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT,
+                 token=None) -> None:
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout
+        self._token = token
+        # The HTTP status of the last response, or 0 if the request never got
+        # one. SyncClient reads it to tell a refused credential from a bad
+        # network; post() returns None for both, and they need opposite
+        # responses.
+        self.last_status = 0
+
+    def token(self) -> str:
+        """
+        The current device token, or "".
+
+        Never raises: this is called on the sync thread inside post(), and a
+        config read that threw here would take the whole cycle down.
+        """
+        source = self._token
+        if callable(source):
+            try:
+                source = source()
+            except Exception as e:
+                log.error("Could not read the device token: %s", e)
+                return ""
+        return str(source or "").strip()
 
     def post(self, path: str, payload: dict):
+        # Reset first: a caller reading last_status after a request that never
+        # reached the network would otherwise see the previous one's code and
+        # act on a refusal that has already been handled.
+        self.last_status = 0
+
         if not self.base_url:
             return None
         # Usage data leaves the machine here. Plain http would put it on the
         # wire in clear text, so refuse rather than downgrade.
         if not self.base_url.lower().startswith("https://"):
             log.error("Sync server URL is not https; refusing to send usage data.")
+            return None
+
+        # No credential, no request. Sending it anyway and letting the server
+        # decide is the vulnerability itself (AUDIT SF-09), not a friendlier
+        # error path. /register is the exception because it issues the token.
+        token = self.token()
+        if not token and path not in UNAUTHENTICATED_ENDPOINTS:
+            log.error("No device token; refusing to send an unauthenticated "
+                      "request to %s. Register this device again.", path)
             return None
 
         url = self.base_url + path
@@ -91,18 +178,29 @@ class Transport:
             log.error("Could not encode a sync request: %s", e)
             return None
 
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": f"ProtBot/{__version__}",
+        }
+        if token:
+            # A header, not a path segment or a body field: it is the one
+            # place in an HTTP request that logging tools redact by
+            # convention. Never logged from here either.
+            headers["Authorization"] = f"Bearer {token}"
+
         request = urllib.request.Request(
-            url,
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": f"ProtBot/{__version__}",
-            },
-            method="POST",
+            url, data=body, headers=headers, method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                self.last_status = int(getattr(response, "status", 200) or 200)
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
+        except urllib.error.HTTPError as e:
+            # Caught before URLError, which it subclasses: the status code is
+            # the whole point, and the generic handler would discard it.
+            self.last_status = int(getattr(e, "code", 0) or 0)
+            log.debug("Sync request to %s was refused: %s", path, e)
+            return None
         except (urllib.error.URLError, OSError, ValueError) as e:
             log.debug("Sync request to %s failed: %s", path, e)
             return None
@@ -129,7 +227,7 @@ class SyncClient:
     def __init__(self, db, config, transport=None) -> None:
         self.db = db
         self.config = config
-        self._transport = transport or Transport(config.get("server_url", ""))
+        self._transport = transport or transport_for(config)
 
         self._lock = threading.RLock()
         self._thread = None
@@ -149,6 +247,12 @@ class SyncClient:
         self._uploaded_date = ""
         self._backoff = BACKOFF_START_SEC
         self._last_error = ""
+        # Set when the server refused this device's credentials. Retrying a
+        # rejected token on a timer never succeeds and keeps a pointless
+        # request going out every half hour, so sync stops until the token
+        # changes — which only happens when the user registers again.
+        self._auth_failed = False
+        self._auth_token_seen = ""
 
     # ── The switch ───────────────────────────────────────────────────────
 
@@ -157,8 +261,16 @@ class SyncClient:
         """
         Whether sync should run at all.
 
-        Both conditions are the user's own doing: they accepted the privacy
-        policy, and they registered this device. Registration is the opt-in.
+        All three conditions are the user's own doing: they accepted the
+        privacy policy, and they registered this device, which is what issues
+        both halves of the credential. Registration is the opt-in.
+
+        The token is required, not merely preferred. A device id on its own is
+        an identifier — it is shown in the Devices tab and carried in every
+        payload — and treating it as a credential is exactly what AUDIT SF-09
+        was about. An install that has an id and no token is one where
+        registration half-completed, and the fix is to register again rather
+        than to send the id by itself.
         """
         try:
             from core import consent
@@ -166,11 +278,28 @@ class SyncClient:
                 return False
         except Exception:
             return False
-        return bool(str(self.config.get("device_id", "") or "").strip())
+        return bool(self.device_id) and bool(self.device_token)
 
     @property
     def device_id(self) -> str:
         return str(self.config.get("device_id", "") or "").strip()
+
+    @property
+    def device_token(self) -> str:
+        """
+        The secret half of the credential. Never logged, never in a payload.
+
+        Read from config on every use rather than cached, so registering
+        (or unregistering) takes effect on the next cycle instead of at the
+        next restart.
+        """
+        return str(self.config.get("device_token", "") or "").strip()
+
+    @property
+    def credentials_refused(self) -> bool:
+        """Whether the server rejected this device's token."""
+        with self._lock:
+            return self._auth_failed
 
     # ── What the monitor reads ───────────────────────────────────────────
 
@@ -221,6 +350,9 @@ class SyncClient:
                           and self._group_date == syncproto.local_date()),
                 "apps_known": len(self._group_totals),
                 "last_error": self._last_error,
+                # The one sync failure the user has to do something about.
+                # Every other one clears itself when the network comes back.
+                "credentials_refused": self._auth_failed,
             }
 
     # ── The thread ───────────────────────────────────────────────────────
@@ -278,6 +410,8 @@ class SyncClient:
     def _sync_once(self) -> bool:
         if not self.enabled:
             return False
+        if self._refused():
+            return False
 
         self._ensure_app_ids()
 
@@ -286,9 +420,8 @@ class SyncClient:
         today = syncproto.local_date()
 
         if payload:
-            if self._transport.post(ENDPOINT_UPLOAD, payload) is None:
-                with self._lock:
-                    self._last_error = "upload failed"
+            if self._post(ENDPOINT_UPLOAD, payload) is None:
+                self._fail("upload failed")
                 return False
             with self._lock:
                 # Only recorded once the server accepted it. Recording an
@@ -298,10 +431,9 @@ class SyncClient:
                 self._uploaded = dict(local_totals)
                 self._uploaded_date = today
 
-        response = self._transport.post(ENDPOINT_SYNC, {"d": self.device_id})
+        response = self._post(ENDPOINT_SYNC, {"d": self.device_id})
         if response is None:
-            with self._lock:
-                self._last_error = "sync fetch failed"
+            self._fail("sync fetch failed")
             return False
 
         totals = syncproto.parse_sync(response)
@@ -319,6 +451,75 @@ class SyncClient:
         log.debug("Synced: %d app(s), %d device(s).",
                   len(totals), syncproto.parse_device_count(response))
         return True
+
+    # ── Credentials ──────────────────────────────────────────────────────
+
+    def _post(self, path: str, payload: dict):
+        """
+        One request, noticing a refused credential on the way past.
+
+        Every request in a cycle goes through here rather than straight to the
+        transport, because any of them can be the one the server refuses and
+        the response to that is different from the response to a timeout.
+        """
+        response = self._transport.post(path, payload)
+        if response is None and self._is_auth_failure():
+            self._reject()
+        return response
+
+    def _fail(self, message: str) -> None:
+        """
+        Record why a cycle stopped, without overwriting a refusal.
+
+        A rejected credential surfaces as "upload failed" if the generic
+        message is allowed to land on top of it — and those two say opposite
+        things to the user. One is wait for the network, the other is register
+        this device again.
+        """
+        with self._lock:
+            if not self._auth_failed:
+                self._last_error = message
+
+    def _is_auth_failure(self) -> bool:
+        """
+        Whether the last request was refused rather than merely failed.
+
+        Read through getattr because a test's fake transport is not obliged to
+        have the attribute, and a missing one must read as "not a refusal" —
+        the safe answer, which keeps the ordinary backoff.
+        """
+        try:
+            return int(getattr(self._transport, "last_status", 0)) in AUTH_FAILURE_STATUSES
+        except (TypeError, ValueError):
+            return False
+
+    def _reject(self) -> None:
+        """Stop syncing until the token changes, and say why."""
+        with self._lock:
+            already = self._auth_failed
+            self._auth_failed = True
+            self._auth_token_seen = self.device_token
+            self._last_error = "the server refused this device's credentials"
+        if not already:
+            # Once, not every half hour: this is the log a user is asked to
+            # send, and a repeated line would bury everything around it.
+            log.error("The sync server refused this device's credentials. "
+                      "Sync is stopped until the device is registered again.")
+
+    def _refused(self) -> bool:
+        """
+        Whether to skip this cycle because the credential was rejected.
+
+        A token different from the refused one means the user registered
+        again, so the new credential gets a chance rather than inheriting the
+        old one's verdict.
+        """
+        with self._lock:
+            token = self.device_token
+            if token != self._auth_token_seen:
+                self._auth_failed = False
+                self._auth_token_seen = token
+            return self._auth_failed
 
     # ── App identity ─────────────────────────────────────────────────────
 
@@ -345,7 +546,7 @@ class SyncClient:
         if not payload:
             return
 
-        response = self._transport.post(ENDPOINT_APPS, payload)
+        response = self._post(ENDPOINT_APPS, payload)
         if response is None:
             return
 
@@ -389,15 +590,47 @@ class SyncClient:
         return totals
 
 
+def transport_for(config, timeout: int = REQUEST_TIMEOUT) -> Transport:
+    """
+    A Transport carrying this device's token, for everything except
+    registration.
+
+    Anything that talks to the sync server on behalf of a registered device
+    should build its transport here — core/linking.py included — so there is
+    one place the credential is attached rather than one per call site, and
+    no way to add an endpoint that quietly goes out unauthenticated.
+
+    The token is passed as a callable, not a value. A transport built at
+    startup would otherwise hold the empty string forever, and sync would keep
+    refusing its own requests until the app was restarted.
+    """
+    return Transport(
+        config.get("server_url", ""),
+        timeout=timeout,
+        token=lambda: str(config.get("device_token", "") or "").strip(),
+    )
+
+
 def register_device(config, device_name: str = "", email: str = "",
                     transport=None) -> str:
     """
-    Register this device and store the id it is given. Returns the id, or "".
+    Register this device and store the credentials it is given. Returns the
+    device id, or "".
 
     This is the moment sync turns on, so it is deliberately an explicit call
     made from the Devices tab rather than something that happens on startup.
     The email is optional and is the user's to type or leave blank; the server
     discards it after the response (server/models.py).
+
+    Registration returns two things and both are required: an id, which names
+    the device, and a token, which proves it. A response carrying only an id
+    is refused and nothing is stored — half a registration would leave the app
+    treating the id as a credential, which is the weakness this replaced
+    (AUDIT SF-09).
+
+    The transport used here deliberately carries no token: this is the call
+    that issues one, and a stale credential from a previous registration has
+    no business being sent to it.
     """
     transport = transport or Transport(config.get("server_url", ""))
     payload = {"n": str(device_name or "")}
@@ -414,6 +647,15 @@ def register_device(config, device_name: str = "", email: str = "",
         log.warning("Device registration returned no id.")
         return ""
 
+    token = str(response.get("t", "") or "").strip()
+    if not token:
+        log.error("Device registration returned no access token; sync needs "
+                  "one and will not be enabled without it.")
+        return ""
+
+    # Stored together, token first: a crash between the two writes must not
+    # leave an id that looks registered with no credential behind it.
+    config.set("device_token", token)
     config.set("device_id", device_id)
     log.info("Device registered for sync.")
     return device_id
@@ -425,9 +667,12 @@ def unregister_device(config) -> None:
 
     Clearing the device id alone would leave the app quiet but still holding
     the identifier that ties this machine to data on the server, and the stale
-    app-id mapping would be wrong the moment the user registered again.
+    app-id mapping would be wrong the moment the user registered again. The
+    token goes with it: keeping a live credential for a device the user has
+    just disconnected is the opposite of what they asked for.
     """
     config.set("device_id", "")
+    config.set("device_token", "")
     config.set("server_app_ids", {})
     config.set("linked_devices", [])
     log.info("Device unregistered; sync is off.")

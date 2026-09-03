@@ -193,10 +193,12 @@ class TestCrashHandling:
         crash.record(ValueError, ValueError("x"), None)
 
     def test_install_is_wired_up_at_startup(self):
-        # The hooks are useless if nothing installs them.
-        main = read("main.py")
-        assert "crash.install()" in main
-        assert "crash.install_tk(root)" in main
+        # The hooks are useless if nothing installs them. The startup sequence
+        # moved out of main.py when the project became installable (ST-04);
+        # main.py is a shim onto this now.
+        launcher = read(os.path.join("ui", "launcher.py"))
+        assert "crash.install()" in launcher
+        assert "crash.install_tk(root)" in launcher
 
 
 # ── GDPR access and portability ───────────────────────────────────────────
