@@ -1,0 +1,156 @@
+name: Build
+
+# Produces the two things a person can actually install: the Windows app
+# (folder build plus the Inno installer) and an Android debug APK.
+#
+# Why this is separate from ci.yml: CI answers "is the tree healthy", runs on
+# every push, and must stay fast. This answers "give me something to test",
+# takes considerably longer, and nobody needs it on every commit.
+#
+# Run it from the Actions tab — "Build" → "Run workflow" — or let it run on a
+# tag. Both jobs upload their output as downloadable artifacts, so no Windows
+# machine and no Android SDK is needed on your side.
+#
+# Neither artifact is signed. See the note at the end of each job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      android:
+        description: "Build the Android APK"
+        type: boolean
+        default: true
+      windows:
+        description: "Build the Windows app and installer"
+        type: boolean
+        default: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows app and installer
+    # Not a nicety: PyInstaller does not cross-compile. It bundles the
+    # platform's own interpreter and a platform bootloader, so a Windows
+    # executable can only be produced on Windows. This runner is the reason
+    # you do not need a Windows VM to get one.
+    runs-on: windows-latest
+    if: ${{ github.event_name == 'push' || inputs.windows }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install runtime and build dependencies
+        # requirements.txt rather than the hash-pinned lockfile: this is a test
+        # build, and --require-hashes fails on any wheel whose hash was taken
+        # for a different platform. A signed release build should use
+        # requirements.lock — BUILD.md covers that.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller pytest ruff
+          # build.ps1 runs the test suite before it builds. Without these,
+          # the tests that read a generated QR symbol back with a real decoder
+          # skip rather than fail — which would let a broken encoder through
+          # into an artifact someone is about to install on their phone.
+          python -m pip install segno opencv-python-headless numpy jsonschema
+
+      - name: Build
+        # packaging/build.ps1 is the real build script, and running it rather
+        # than reimplementing its steps is the point: it runs the tests and
+        # lint first, generates the version resource and the SBOM, builds, and
+        # then smoke-tests that the frozen app stays running for eight seconds.
+        # A missing hidden import kills a frozen GUI app silently, so that
+        # smoke test is the check that matters.
+        shell: pwsh
+        run: ./packaging/build.ps1
+
+      - name: Upload the app
+        # always(): build.ps1 fails the job if the frozen app does not survive
+        # its eight-second smoke test, and that is the right call — but the
+        # folder build is exactly what you would want to run by hand to find
+        # out why. The job still goes red.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protbot-windows-app
+          path: dist/ProtBot/
+          # warn, not error: when the build fails before PyInstaller runs
+          # there is nothing to upload, and reporting that as a second failure
+          # buries the first one.
+          if-no-files-found: warn
+
+      - name: Upload the installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protbot-windows-installer
+          # build.ps1 skips this step and says so when Inno Setup is absent,
+          # rather than failing, so the app artifact above is still produced.
+          path: dist/installer/*.exe
+          if-no-files-found: warn
+
+      - name: Upload the bill of materials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: protbot-sbom
+          path: packaging/protbot.cdx.json
+          if-no-files-found: warn
+
+      # Unsigned. SmartScreen will warn on first run — "Windows protected your
+      # PC" → More info → Run anyway. That is expected, and STATUS.md item 2
+      # (a Microsoft Store account, ~$19) is what removes it.
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || inputs.android }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install the Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+
+      - name: Build the debug APK
+        # Debug, not release. A debug APK is signed with the universal debug
+        # key, so it installs on any device with no keystore and no Play
+        # account — which is what "let me test it" means. A release APK is
+        # unsigned until someone creates a keystore, and Android refuses to
+        # install an unsigned package.
+        #
+        # -PwithAndroid is what includes the :app module: settings.gradle.kts
+        # leaves it out when there is no SDK, so `gradle :core:test` keeps
+        # working on machines without one.
+        working-directory: android
+        run: gradle :app:assembleDebug --no-daemon -PwithAndroid --stacktrace
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: protbot-android-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      # To install: download the artifact, unzip it, and either
+      #   adb install -r app-debug.apk
+      # or copy the .apk to the phone and open it, having allowed installs
+      # from that source. The app then needs two grants no installer can give
+      # it — Usage access, and Display over other apps — both under
+      # Settings > Apps > Special app access.

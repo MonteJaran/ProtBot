@@ -1,6 +1,17 @@
 plugins {
     id("com.android.application") version "8.7.3"
     kotlin("android") version "2.0.21"
+    // Required from Kotlin 2.0 on. The Compose compiler used to be a separate
+    // artifact selected through `composeOptions.kotlinCompilerExtensionVersion`;
+    // in 2.0 it moved into the Kotlin project and became this plugin, and AGP
+    // fails the build outright when `buildFeatures.compose` is on without it:
+    //
+    //     Starting in Kotlin 2.0, the Compose Compiler Gradle plugin is
+    //     required when compose is enabled.
+    //
+    // Nothing here had ever been compiled, so the old form sat in this file
+    // looking correct. Its version is tied to the Kotlin version, not chosen.
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
     id("com.google.devtools.ksp") version "2.0.21-1.0.28"
 }
 
@@ -24,8 +35,18 @@ android {
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
+                // This file has to exist. Gradle fails the release build with
+                // "file not found" rather than treating a missing rules file
+                // as an empty one, and it was referenced here without ever
+                // being written.
                 "proguard-rules.pro",
             )
+        }
+        debug {
+            // So a debug build can be installed alongside a release one, and
+            // so a tester can tell at a glance which they are running.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
     }
 
@@ -37,7 +58,8 @@ android {
     kotlinOptions { jvmTarget = "17" }
 
     buildFeatures { compose = true }
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }
+    // No `composeOptions` block: the Compose compiler version is the Kotlin
+    // plugin's version now, and setting it here has no effect under Kotlin 2.0.
 
     sourceSets["main"].java.srcDirs("src/main/kotlin")
 }
@@ -55,6 +77,10 @@ dependencies {
     implementation("androidx.compose.ui:ui:$compose")
     implementation("androidx.compose.material3:material3:1.3.1")
     implementation("androidx.compose.ui:ui-tooling-preview:$compose")
+    // The other half of ui-tooling-preview. Without it a @Preview composable
+    // compiles and renders nothing, and it is debug-only so it never reaches
+    // a release build.
+    debugImplementation("androidx.compose.ui:ui-tooling:$compose")
 
     val room = "2.6.1"
     implementation("androidx.room:room-runtime:$room")

@@ -390,3 +390,135 @@ def test_the_licence_is_declared_once_and_not_twice():
         "A 'License ::' classifier alongside the PEP 639 license expression "
         "makes the project unbuildable."
     )
+
+
+# ── The Android build (AUDIT: :app has never been compiled) ───────────────────
+# Source checks, because there is no Android SDK here and there was none when
+# any of android/app/ was written. That is exactly why these are worth having:
+# a build file that has never run is a build file whose mistakes are invisible,
+# and both of the ones below stop the very first compile.
+
+ANDROID = REPO_ROOT / "android"
+ANDROID_APP_GRADLE = ANDROID / "app" / "build.gradle.kts"
+
+
+def _gradle_code(path) -> str:
+    """A Kotlin build script with its comment lines removed.
+
+    The comments here explain which mechanism replaced which, so they name the
+    obsolete settings on purpose. A check that searched the whole file would
+    match the explanation and not the setting.
+    """
+    return "\n".join(line for line in read(path).splitlines()
+                     if not line.lstrip().startswith("//"))
+
+
+
+
+def test_the_compose_compiler_plugin_is_applied():
+    # From Kotlin 2.0 the Compose compiler moved into the Kotlin project and
+    # became a Gradle plugin. AGP fails outright when buildFeatures.compose is
+    # on without it:
+    #   "Starting in Kotlin 2.0, the Compose Compiler Gradle plugin is
+    #    required when compose is enabled."
+    gradle = _gradle_code(ANDROID_APP_GRADLE)
+    if "compose = true" not in gradle:
+        pytest.skip("the app module no longer enables Compose")
+    assert "org.jetbrains.kotlin.plugin.compose" in gradle, (
+        "android/app/build.gradle.kts turns Compose on without the Compose "
+        "compiler plugin. The build fails before it compiles anything."
+    )
+
+
+def test_the_compose_compiler_plugin_matches_the_kotlin_version():
+    # Its version is not a choice — it tracks the Kotlin plugin. A mismatch is
+    # a build error, not a warning.
+    gradle = _gradle_code(ANDROID_APP_GRADLE)
+    kotlin = re.search(r'kotlin\("android"\) version "([^"]+)"', gradle)
+    compose = re.search(
+        r'id\("org\.jetbrains\.kotlin\.plugin\.compose"\) version "([^"]+)"', gradle)
+    assert kotlin and compose
+    assert kotlin.group(1) == compose.group(1), (
+        f"Kotlin is {kotlin.group(1)} and the Compose plugin is "
+        f"{compose.group(1)}; they have to match."
+    )
+
+
+def test_the_obsolete_compose_extension_version_is_gone():
+    # kotlinCompilerExtensionVersion inside a composeOptions block is the
+    # pre-2.0 mechanism. Leaving it set reads as though the Compose compiler
+    # version is pinned, when in fact it is ignored.
+    assert "kotlinCompilerExtensionVersion" not in _gradle_code(ANDROID_APP_GRADLE)
+
+
+def test_every_proguard_file_the_release_build_names_exists():
+    # Gradle does not treat a missing rules file as an empty one: it fails the
+    # release build with "file not found". proguard-rules.pro was referenced
+    # here without ever being written.
+    gradle = _gradle_code(ANDROID_APP_GRADLE)
+    for name in re.findall(r'"([^"]+\.pro)"', gradle):
+        assert (ANDROID / "app" / name).is_file(), (
+            f"the release build references android/app/{name}, which is missing"
+        )
+
+
+@pytest.mark.parametrize("klass", [
+    "app.protbot.ProtBotApplication",
+    "app.protbot.ui.MainActivity",
+    "app.protbot.block.BlockerAccessibilityService",
+    "app.protbot.usage.BootReceiver",
+])
+def test_manifest_classes_are_kept_from_the_optimiser(klass):
+    # R8 constructs nothing here — the system does, by name, from the
+    # manifest — so every one of these is unreferenced code it may rename or
+    # remove. The symptom is not a build failure: it is an app that installs,
+    # launches, and quietly enforces nothing.
+    rules = read(ANDROID / "app" / "proguard-rules.pro")
+    assert klass in rules, f"{klass} is instantiated by name and is not kept"
+
+
+def test_workers_survive_minification():
+    # WorkManager stores a worker's class name in its own database and
+    # reflects it back. A renamed worker is a job that never runs again after
+    # an update, and nothing reports it.
+    rules = read(ANDROID / "app" / "proguard-rules.pro")
+    assert "androidx.work.ListenableWorker" in rules
+    assert "androidx.work.WorkerParameters" in rules
+
+
+def test_a_debug_build_installs_beside_a_release_one():
+    # So a tester can hold both, and can tell which one they are looking at.
+    gradle = _gradle_code(ANDROID_APP_GRADLE)
+    assert "applicationIdSuffix" in gradle
+
+
+# ── There is a way to get an installable build ────────────────────────────────
+
+BUILD_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build.yml"
+
+
+def test_a_workflow_produces_both_installable_artifacts():
+    assert BUILD_WORKFLOW.is_file(), (
+        "nothing in the repository produces something a person can install"
+    )
+    workflow = read(BUILD_WORKFLOW)
+    assert "windows-latest" in workflow, (
+        "PyInstaller does not cross-compile; a Windows runner is the only way "
+        "to produce a Windows executable"
+    )
+    assert "assembleDebug" in workflow, (
+        "a release APK is unsigned and Android will not install it; debug is "
+        "what a tester can actually put on a phone"
+    )
+
+
+def test_the_windows_build_runs_the_real_build_script():
+    # Rather than reimplementing its steps, which would drift from it and
+    # would skip the smoke test that catches a missing hidden import.
+    assert "build.ps1" in read(BUILD_WORKFLOW)
+
+
+def test_the_build_can_be_started_by_hand():
+    # It is the answer to "give me something to test", which is a question
+    # asked on a day, not on a commit.
+    assert "workflow_dispatch" in read(BUILD_WORKFLOW)

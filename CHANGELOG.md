@@ -78,6 +78,9 @@ any of it. The first entry under a real version number will be written when
   lockfile and shipped inside the build, for Regulation (EU) 2024/2847 (the
   Cyber Resilience Act).
 - **ProtBot is an installable Python package**, with a `protbot` entry point.
+- **A workflow that produces installable builds** — the Windows app and
+  installer, and an Android debug APK — on GitHub's runners, so neither a
+  Windows machine nor an Android SDK is needed to get something to test.
 
 ### Changed
 
@@ -113,6 +116,11 @@ any of it. The first entry under a real version number will be written when
 - **A blocked app was never actually blocked.** The `-1` sentinel multiplied
   out to a negative limit and produced a 0% usage reading. All limit reads go
   through one function now.
+- **Two mistakes that stopped the Android app compiling at all**, found by
+  reading the build file rather than by running it: from Kotlin 2.0 the
+  Compose compiler is a Gradle plugin that has to be applied, and the release
+  build named a ProGuard rules file that had never been written. Neither had
+  ever been hit, because the app had never been compiled.
 - **Four places where text did not have enough contrast to be readable**:
   secondary text on the darkest surface, the accent colour used as text, the
   white label on a primary button, and the label on a destructive button. All

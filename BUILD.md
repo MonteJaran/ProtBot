@@ -5,6 +5,37 @@
 > first real build will need adjustment. Treat the smoke test in `build.ps1`
 > as the gate, not this document.
 
+## The short way: let GitHub build both
+
+You do not need a Windows machine, and you do not need an Android SDK.
+`.github/workflows/build.yml` builds the Windows app, the installer and an
+Android debug APK on GitHub's runners and uploads all three as downloadable
+artifacts.
+
+    Actions tab → "Build" → "Run workflow"
+
+Artifacts appear at the bottom of the run's summary page when it finishes:
+
+| Artifact | What it is | How to run it |
+|---|---|---|
+| `protbot-windows-app` | The folder build | Unzip, run `ProtBot.exe` |
+| `protbot-windows-installer` | The Inno installer | Unzip, run the `.exe` |
+| `protbot-android-debug-apk` | A debug APK | `adb install -r app-debug.apk`, or copy it to the phone and open it |
+
+Two things to expect, neither of them a fault:
+
+- **SmartScreen will warn** on the Windows build. It is unsigned — "More
+  info" → "Run anyway". A Microsoft Store account (~$19, `STATUS.md` item 2)
+  is what removes that.
+- **The Android app needs two permissions no installer can grant**: Usage
+  access, and Display over other apps, both under Settings → Apps → Special
+  app access. Without the first it records nothing at all.
+
+**This requires GitHub Actions to be able to run.** At the time of writing
+every job fails within seconds with no runner assigned, which is the billing
+lock in `STATUS.md` item 1 — not a fault in the workflow. Until that is
+cleared, use the manual routes below.
+
 ## Requirements
 
 | Tool | Why | Where |
@@ -154,6 +185,38 @@ pip-compile --generate-hashes --output-file=requirements.lock pyproject.toml
 ```
 
 `requirements.txt` keeps loose bounds for day-to-day development.
+
+## Building the Android APK by hand
+
+Needs a JDK 17+ and the Android SDK with platform 35. Android Studio installs
+both; on a headless machine, the command-line tools plus:
+
+```
+sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+```
+
+Then, with `ANDROID_HOME` set:
+
+```bash
+cd android
+gradle :app:assembleDebug -PwithAndroid
+# android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+`-PwithAndroid` is what includes the `:app` module. `settings.gradle.kts`
+leaves it out when no SDK is present, so that `gradle :core:test` — the shared
+rules, 115 tests — keeps working on machines without one.
+
+**Build debug, not release.** A debug APK is signed with the universal debug
+key and installs anywhere. The release build is unsigned until someone creates
+a keystore, and Android refuses to install an unsigned package.
+
+`:app` had never been compiled before this workflow existed, and writing it
+turned up two things that stop the first build outright: Kotlin 2.0 requires
+the Compose compiler Gradle plugin, which was not applied, and the release
+build referenced a `proguard-rules.pro` that did not exist. Both are fixed and
+both are now pinned by tests in `tests/test_packaging_build.py`. Expect more of
+the same — nothing in `android/app/` has run.
 
 ## Other platforms
 

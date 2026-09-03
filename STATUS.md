@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 794 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 807 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below — SF-09 and ST-04 closed this round, and
@@ -24,9 +24,9 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 909 tests below are only as good as the last time someone ran them by hand. |
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 922 tests below are only as good as the last time someone ran them by hand. It is also the only thing standing between you and an installable Windows build and an Android APK — `.github/workflows/build.yml` produces both on GitHub's runners, so items 3 below needs no Windows VM any more, only this. |
 | 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
-| 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
+| 3 | **The first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `.github/workflows/build.yml` now produces the Windows app, the installer and an Android debug APK on GitHub's runners, so this needs a clean Windows VM only if you would rather not wait on item 1 — the workflow is blocked by the same billing lock. `BUILD.md` walks both routes. Expect something to be wrong; finding out before anyone else does is the point. |
 | 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
 | 5 | **Publish a contact address** | Free, but it is a decision | `PRIVACY.md` and `SECURITY.md` both hold a placeholder. GDPR Article 13 *requires* the controller's contact details; a policy without one is not compliant. Whether that is a personal email or `security@` on your own domain is your call, which is why neither file guesses. A test fails the day either placeholder is deleted without a real address replacing it. |
 | 6 | **Confirm the licence** | Free, effectively one-way | `LICENSE` states the all-rights-reserved default explicitly, which is right for something you intend to sell and keeps every option open. Open source instead is a deliberate, irreversible decision — a permissive licence cannot be recalled from copies people already hold. |
@@ -75,9 +75,14 @@ session, because it cannot be asserted from source:
 
 ### 4. Build the Android app for real
 The shared rules compile and pass 115 tests. `android/app/` has never been
-compiled, because this machine has no Android SDK. Until someone runs
-`gradle :app:assembleDebug`, the Android half is source code rather than
-software.
+compiled. There is now a workflow that does it — Actions → Build → Run
+workflow — which needs the billing lock cleared and nothing else; or
+`gradle :app:assembleDebug -PwithAndroid` on any machine with the SDK.
+
+Two build-stopping mistakes have already been found by reading the build file
+and fixed. Expect more: nothing in `android/app/` has run, and a first compile
+of 1,500 lines of never-compiled Kotlin does not usually succeed. Until it
+does, the Android half is source code rather than software.
 
 ### 5. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
@@ -128,7 +133,13 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
   policy they feed is tested thoroughly; the probes have never returned a real
   value.
 - **`create_shortcut.ps1`** — rewritten for PowerShell 5.1, never executed.
-- **`android/app/`** — written in full, never compiled. No Android SDK here.
+- **`android/app/`** — written in full, never compiled. No Android SDK here,
+  and `dl.google.com` is blocked by this environment's network policy, so one
+  cannot be installed either. Two things that stop the first compile outright
+  have been found by reading and fixed — Kotlin 2.0 needs the Compose compiler
+  Gradle plugin, which was not applied, and the release build named a
+  `proguard-rules.pro` that did not exist — and both are pinned by tests. That
+  is two found by inspection, not a clean bill of health.
 
 `BUILD.md` walks the first real build.
 
@@ -185,7 +196,7 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **909 tests** | 794 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, a packaging-config check, and a wheel build. |
+| **922 tests** | 807 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, a packaging-config check, and a wheel build. |
 | **An installable package** | `pyproject.toml` declared no build backend, so the project could not be installed at all, and `main.py` covered for it by editing `sys.path` — a line that was doing nothing, since Python already puts a script's directory there. There is a backend and a `protbot` entry point now, the startup sequence moved to `ui/launcher.py` where the entry point can reach it, and `main.py` is a shim so the spec, the `.bat` and `BUILD.md` are untouched. Building it for the first time turned up a `License ::` classifier that PEP 639 superseded and that setuptools now refuses outright — latent for as long as nobody tried. CI builds the wheel on every push. AUDIT ST-04. |
 | **Keyboard navigation, and a focus ring you can see** | clam draws focus as a dotted outline in the foreground colour, which on a dark background is invisible, and every control was borderless — a button and the card behind it differed only in fill. Both fixed at the style level rather than per widget, which is how the one that mattered ends up missed. Ctrl+1–5 jump to a tab, Ctrl+Tab cycles, and the tab strip is a stop in the Tab order so the arrows work there as they do in every other Windows app. |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
@@ -228,6 +239,10 @@ Recorded so nobody rediscovers them as bugs.
   PyInstaller build, whose spec bundles them; the wheel exists so the project
   is installable and `main.py` no longer edits `sys.path`. Both call sites
   already degrade — no icon, and the policy opens from the URL instead.
+- **Neither build artifact is signed.** The Windows one trips SmartScreen
+  ("More info" → "Run anyway"); the Android one is a debug APK, signed with
+  the universal debug key, which installs anywhere and is not something to
+  hand to a stranger. Signing is items 2 and 11 on the blocked list.
 - **Client-side authentication is half of an authenticated API.** The client
   now holds up its end completely, and it is worth being plain that this buys
   nothing on its own: a server that checks the device id in the payload and
