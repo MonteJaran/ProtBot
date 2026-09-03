@@ -37,12 +37,19 @@ tests/      pytest suite — see tests/README.md
 
 ```bash
 python -m pip install pytest ruff
-python -m pytest          # 384 tests, none touch your real data
+python -m pytest          # see STATUS.md for the current count; none touch your real data
 python -m ruff check .    # lint
 ```
 
-CI runs the suite on Linux and Windows against Python 3.10 and 3.12, plus lint,
-a byte-compile of the Tk modules, and a real install of `requirements.txt`.
+A few tests (QR round-tripping, the SBOM) skip unless their extra is
+installed too — `pip install -e .[dev]` gets all of it, and also makes
+`core`/`ui`/`main` importable from outside the repo root the same way
+`pyproject.toml`'s `protbot` entry point does.
+
+CI runs the suite on Linux and Windows against Python 3.10 and 3.12, plus
+lint, a byte-compile of the Tk modules, a real install of `requirements.txt`
+and of the package itself, and a dependency audit and SBOM against
+`requirements.lock`.
 
 ## Project documents
 

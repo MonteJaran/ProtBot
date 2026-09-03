@@ -23,8 +23,10 @@ function Step($message) { Write-Host "==> $message" -ForegroundColor Cyan }
 function Ok($message)   { Write-Host "    $message" -ForegroundColor Green }
 
 # ── Version, read from the one place that defines it ─────────────────────────
+# No sys.path hack needed: `python -c` puts the current directory — the repo
+# root, via Set-Location above — at sys.path[0] on its own. AUDIT ST-04.
 Step 'Reading version'
-$Version = (python -c "import sys; sys.path.insert(0, '.'); from core.version import __version__; print(__version__)").Trim()
+$Version = (python -c "from core.version import __version__; print(__version__)").Trim()
 if (-not $Version) { throw 'Could not read version from core/version.py' }
 Ok "ProtBot $Version"
 

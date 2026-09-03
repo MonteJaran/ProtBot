@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 788 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 794 Python tests green on 3.10 and 3.12, plus 115
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -72,11 +72,7 @@ rather than its product will not meet the desktop executable. A small screen
 saying "these two are the same app" closes it. Nothing depends on it: an
 unmatched app simply counts per-device.
 
-### 6. Make it an installable package (AUDIT ST-04 remainder)
-`main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
-drops the hack and simplifies the PyInstaller spec.
-
-### 7. The remaining roadmap features
+### 6. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -156,10 +152,11 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **903 tests** | 788 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. (This row is not itself test-enforced the way the "Where things stand" count above is — caught stale once already; if it drifts again, trust the header.) |
+| **909 tests** | 794 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. (This row is not itself test-enforced the way the "Where things stand" count above is — caught stale once already; if it drifts again, trust the header.) |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
 | **A software bill of materials, in CI** | `cyclonedx-py` over `requirements.lock`, published as a build artifact on every push. For the EU Cyber Resilience Act — vulnerability-reporting obligations begin 11 September 2026. `tests/test_sbom.py` checks the generated SBOM actually lists every pinned dependency at its pinned version, not just that the command exits 0. |
+| **An installable package (AUDIT ST-04)** | `pyproject.toml` declares a real build backend and a `protbot = "main:main"` entry point; `main.py`'s `sys.path.insert` — which only ever worked because it happens to sit at the repo root beside `core/` and `ui/` — is gone. Verified with an actual `pip install -e .`, not just read back: that install caught a real bug (a `License ::` classifier that current setuptools now refuses to combine with a license expression, PEP 639 — pre-existing, never triggered because nothing had ever run `pip install .` here before), fixed alongside it. The `dependencies` CI job now installs the package for real and imports `main` on Windows, the target platform. |
 | **Renamed to ProtBot** | Including the data directory, with a migration that never overwrites newer data and never deletes the old folder if the move fails. |
 | **Signed, machine-bound licence gate** | 14-day offline grace. Server errors never revoke; only an explicit refusal does. |
 | **A real distribution** | PyInstaller spec, Inno installer, working uninstaller. Never run — see above. |

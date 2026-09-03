@@ -20,6 +20,11 @@ any of it. The first entry under a real version number will be written when
 
 ### Added
 
+- **ProtBot is now an installable package.** `pyproject.toml` declares a
+  real build backend and a `protbot` console-script entry point
+  (`pip install -e .`, then `protbot`). `main.py` no longer reaches `core/`
+  and `ui/` with `sys.path.insert` — a trick that only ever worked because
+  `main.py` happens to sit at the repo root beside them.
 - **A software bill of materials.** `cyclonedx-py` runs over
   `requirements.lock` in CI and publishes the result as a build artifact on
   every push — for the EU Cyber Resilience Act (Regulation (EU) 2024/2847),

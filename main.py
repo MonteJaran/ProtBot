@@ -6,9 +6,13 @@ import threading
 import tkinter as tk
 from tkinter import messagebox
 
-# Ensure we can import our modules regardless of working directory
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
+# No sys.path hack (AUDIT ST-04): main.py sits at the repo root beside
+# core/ and ui/, and Python already puts a script's own directory at
+# sys.path[0] when it is run directly — the same reason `python main.py`
+# works from any cwd. The installed case is covered by pyproject.toml's
+# [project.scripts] entry, which needs `pip install -e .` to have made
+# core/ and ui/ real packages, not a path trick, for the entry point it
+# generates to find them at all.
 from core import crash, licensing, logging_setup, tray, updates
 from core.config import Config
 from core.consent import has_consented, record_consent, show_consent_dialog

@@ -97,6 +97,17 @@ jobs:
         # requirements.txt.
         run: python -c "import psutil, plyer; print('runtime deps OK')"
 
+      - name: Install as an editable package
+        # AUDIT ST-04: main.py used to reach core/ and ui/ with
+        # sys.path.insert. This is what replaced it — a real install,
+        # not a read of the config that describes one. Runs on Windows,
+        # the real target, where actions/setup-python's Python ships
+        # tkinter, so this also proves `import main` — everything
+        # main.py imports at module level — actually resolves.
+        run: |
+          python -m pip install -e .
+          python -c "import main; assert callable(main.main); print('main imports OK')"
+
       - name: Verify the packaging config
         # PyInstaller and Inno Setup cannot run here, but the spec, the
         # installer script and the launcher can be checked for drift.
