@@ -86,6 +86,16 @@ just opened.
   reaches the user *at* the risky moment — a retrospective report on a tab
   they have to go open is a different feature wearing this one's name, and
   advertising it as this one is exactly what AUDIT BL-02 exists to catch.
+- **Design settled, when this is built:** the tracked device computes its
+  own risk entirely locally (the statistics already exist —
+  `core/trends.py`'s `preceding_app_triggers`/`weekday_breakdown` — no
+  server round-trip needed to decide whether to warn). If a parent-facing
+  view of this is wanted at all, only a fired/not-fired signal and the
+  device id cross the network — never the app-open pattern behind it. The
+  server already has no way to identify a device except by an id the
+  parent already labelled themselves (Devices tab), so this needs no new
+  server-side model or endpoint, only a client-side decision never to send
+  the raw pattern anywhere.
 
 ### 5. PDF / Excel report export — SHIPPED
 Formatted weekly and monthly reports.
@@ -109,15 +119,16 @@ Formatted weekly and monthly reports.
   — verified against `qpdf --check` and `pdftotext`, dev-time tools only,
   same role OpenCV/segno play for `core/qrcode.py`'s tests.
 
-### 6. Team challenges & leaderboards
+### 6. Team challenges & leaderboards — DROPPED
 Shared goals across a group of linked users.
 
-- **Status:** not started
-- **Blocked on:** #1, and a real user account model — device IDs are not
-  identities
-- **Notes:** biggest scope of anything here, and the largest privacy surface.
-  Needs its own consent step beyond the first-run gate, since it publishes one
-  person's usage to others
+- **Status:** not building this. Owner's call: not necessary. Kept here,
+  struck rather than deleted, so nobody re-proposes it without knowing it
+  was already considered and declined.
+- **Notes (for the record):** would have been the biggest scope of
+  anything on this list, and the largest privacy surface — it publishes
+  one person's usage to others, and device IDs are not identities, so it
+  would have needed a real account model first.
 
 ### 7. Scheduled focus hours — SHIPPED
 

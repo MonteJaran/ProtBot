@@ -1,10 +1,3 @@
-# DISABLED — renamed out of .github/workflows/ so GitHub Actions no longer
-# discovers it (a workflow only runs from a *.yml/*.yaml file directly in
-# that directory). Turned off on the owner's instruction; GitHub billing was
-# separately locked already (see STATUS.md "Blocked on you" #1), so this
-# was not running cleanly regardless. To re-enable: `git mv
-# .github/workflows/ci.yml.disabled .github/workflows/ci.yml`, remove this
-# header, and unlock billing first or every job still fails the same way.
 name: CI
 
 on:
@@ -141,6 +134,28 @@ jobs:
         # freezes any advisory published after the pin was taken — this job is
         # what stops that going unnoticed.
         run: pip-audit --requirement requirements.lock --strict --progress-spinner off
+
+  server:
+    name: Sync server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install server + test dependencies
+        # server/requirements.txt is deliberately separate from
+        # requirements.txt/.lock — the server is never bundled into a
+        # ProtBot build (server/requirements.txt's own docstring).
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r server/requirements.txt pytest
+
+      - name: Run the server's tests
+        run: python -m pytest tests/test_server.py -v
 
   android-core:
     name: Android shared rules

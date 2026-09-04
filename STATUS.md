@@ -23,12 +23,12 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI is currently **off** (`.github/workflows/ci.yml.disabled` — owner's instruction), and it had never run even before that: every job failed with "the account is locked due to a billing issue," not a code failure. Until billing is unlocked and someone renames the workflow back on, the test count in the header above is only as good as the last time someone ran it by hand. |
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI (`.github/workflows/ci.yml`) is back **on**, owner's instruction — but every job still fails with "the account is locked due to a billing issue" until this is actually paid, which is a GitHub account setting, not something any amount of code touches. Until it's unlocked, the test count in the header above is only as good as the last time someone ran it by hand. |
 | 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
 | 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. **This one genuinely cannot be coded around**: there is no Windows machine anywhere this session can reach, so nobody has attempted it on your behalf — this line is exactly as true as it was before. |
 | 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
 | 5 | **Publish a contact address** | Free, but it is a decision | `PRIVACY.md` and `SECURITY.md` both hold a placeholder. GDPR Article 13 *requires* the controller's contact details; a policy without one is not compliant. Whether that is a personal email or `security@` on your own domain is your call, which is why neither file guesses. A test fails the day either placeholder is deleted without a real address replacing it. |
-| 6 | **Confirm the licence** | Free, effectively one-way | `LICENSE` states the all-rights-reserved default explicitly, which is right for something you intend to sell and keeps every option open. Open source instead is a deliberate, irreversible decision — a permissive licence cannot be recalled from copies people already hold. |
+| ~~6~~ | ~~Confirm the licence~~ **Confirmed: proprietary.** | — | Decided — not open source, nothing shared. `LICENSE` already states exactly that (all-rights-reserved, no redistribution, no derivative works) and needs no change. Closed. |
 | 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch), then a lawyer if it's close | A plain web search (not a formal TESS/EUIPO search — that's still yours to run) already found a real conflict worth knowing about before going further: an existing **"ProtBot" Discord bot**, live on top.gg, in the same general "bot/software" space this app is in. That does not by itself mean the name is unavailable — but it's common-law prior use in the same category, which is exactly the kind of thing that turns into a dispute later rather than earlier. Worth the formal search and possibly item 12's lawyer before more is built on the name. |
 | 8 | **Deploy the sync server** | An hour or two, once a host is picked | The code is done — see Finished below, `server/`, all 7 endpoints plus `/license/verify`, tested. What's left is entirely infrastructure only you can choose: a host (`server/README.md` deliberately does not pick one — a VPS, Fly.io, Render, Railway, whatever you already have), a domain/subdomain with TLS pointed at it, `config.set("server_url", ...)` on the desktop side, and backups of `protbot_server.db`. `server/README.md`'s "Deploying it" section is the checklist. Separately: the *old* deployed function this replaces — unversioned, holding user emails — still exists somewhere and was never reachable from here to migrate or decommission; worth finding and shutting down once the new one is live, so there are not two servers with two different sets of rules. |
 | 9 | **Provision licence keys once Paddle exists** | Minutes per sale, until automated | `/license/verify` is real and tested against a `license_keys` table, but nothing fills that table automatically yet — there is no Paddle account to know its webhook payload shape (item 10). `server/issue_license.py` is the manual bridge: run it by hand for now. Once Paddle is set up, its webhook event on a successful sale is what a small `server/paddle_webhook.py` would turn into the same `license_issue()` call this script already makes — share the webhook payload shape when that account exists and this becomes one more file rather than a redesign. |
@@ -74,15 +74,21 @@ and tested — including, now, the manual app-matching data layer (see
 Finished below): `SyncClient.kt` has `manualKeyFor`/`setManualKey`/
 `clearManualKey` ready, and no screen calls them yet.
 
-### 6. The remaining roadmap features
-In `ROADMAP.md`. Two items are now fully shipped, free, see Finished below:
-pattern recognition (item 3, all three pieces) and PDF/Excel report export
-(item 5, both formats). Still open: predictive alerts (deliberately not
+### 6. The remaining roadmap feature
+In `ROADMAP.md`. Three items are now fully shipped, free, see Finished
+below: pattern recognition (item 3, all three pieces), PDF/Excel report
+export (item 5, both formats), and the sync server (item 1's server half).
+Team challenges & leaderboards is dropped — owner's call, see ROADMAP.md
+item 6. The one thing still open is predictive alerts (deliberately not
 attempted alongside item 3 — the live half belongs in `core/monitor.py`,
 the app's one safety-critical always-running loop, and wants its own pass
-rather than being rushed in on the side; see `ROADMAP.md` item 4) and team
-features (biggest scope of anything here, its own consent surface, not
-worth starting before someone has installed the app).
+rather than being rushed in on the side; see `ROADMAP.md` item 4). Design
+direction is settled: computed entirely on the tracked device (the
+statistics already exist — `core/trends.py`), nothing raw ever leaves it;
+if a parent-facing alert is wanted at all, only a fired/not-fired signal
+and the device id travels, never the underlying usage pattern — the
+parent already has their own name for that device, so an id is enough to
+identify which one.
 
 ---
 
@@ -231,9 +237,8 @@ Recorded so nobody rediscovers them as bugs.
 
 ## Suggested order
 
-1. **Unlock billing, then turn CI back on** (`git mv
-   .github/workflows/ci.yml.disabled .github/workflows/ci.yml`). Until it
-   runs you cannot trust a single push.
+1. **Unlock billing.** CI is already back on; it just fails on every run
+   until billing is paid. Until it runs clean you cannot trust a single push.
 2. **Microsoft Store account.** $19 to stop SmartScreen frightening everyone
    who tries to install.
 3. **First real Windows build**, on a clean VM, through `BUILD.md`. Find out

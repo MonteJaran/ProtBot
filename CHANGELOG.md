@@ -125,6 +125,13 @@ written when `BUILD.md` is walked on a Windows machine.
 
 ### Changed
 
+- **Licence confirmed: proprietary, not open source.** `LICENSE` already
+  said exactly that (all-rights-reserved, no redistribution or derivative
+  works) — an owner decision, not a code change, now settled rather than
+  open.
+- **CI is back on.** `.github/workflows/ci.yml`, including a new `server`
+  job running `tests/test_server.py`. Still fails until GitHub billing is
+  paid — a billing setting, not a code problem.
 - **Renamed from FocusGuard to ProtBot**, including the data directory.
   `core/paths.py` migrates an existing `%LOCALAPPDATA%\FocusGuard` folder on
   first run, never overwriting newer data and never deleting the old folder if
@@ -136,6 +143,12 @@ written when `BUILD.md` is walked on a Windows machine.
   satisfy in a frozen build.
 - **Dependencies are pinned by exact version and SHA-256 hash**
   (`requirements.lock`).
+
+### Removed
+
+- **Team challenges & leaderboards**, from the roadmap. Owner's call: not
+  necessary. Never advertised, never built — `ROADMAP.md` item 6 keeps the
+  record so it isn't re-proposed without knowing it was already declined.
 
 ### Fixed
 

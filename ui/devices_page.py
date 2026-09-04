@@ -66,7 +66,6 @@ _PREMIUM_FEATURES: list = []
 _PLANNED_FEATURES = [
     "Cross-device sync",
     "Predictive distraction alerts",
-    "Team challenges & leaderboards",
     "Priority support",
 ]
 
