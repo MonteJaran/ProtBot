@@ -89,13 +89,25 @@ class AppSyncResp(BaseModel):
 class UploadReq(BaseModel):
     d: str                    # device_id
     t: int                    # period end — unix timestamp (int, not ISO string)
+    z: str                    # the client's own local date (note 2) — the
+                               # field this class was missing until the server
+                               # implementation was written against
+                               # core/syncproto.py's actual build_upload(),
+                               # which has always sent it. Stored verbatim.
     a: list[list]             # [[server_app_id, seconds], ...]  only s>0
 
 class UploadResp(BaseModel):
     ok: int = 1
 
 
-# ── Cross-device sync response ────────────────────────────────────────────────
+# ── Cross-device sync ──────────────────────────────────────────────────────────
+# POST body is just the device id — core/syncclient.py's _sync_once() sends
+# {"d": self.device_id} and nothing else. No date travels with this request;
+# the group total is built from each device's own most recently *uploaded*
+# date, not a date supplied here — see server/db.py's group_totals().
+
+class SyncReq(BaseModel):
+    d: str                    # device_id
 
 class SyncResp(BaseModel):
     apps: dict                # {server_app_id: total_sec_today}
@@ -109,6 +121,9 @@ class SyncResp(BaseModel):
 # the request is about, not proof of who is asking. See note 4 above. The
 # audit's fix also calls for rate-limiting /link/new and /link/join: an
 # 8-character key is guessable in bulk without one, however short its life.
+
+class LinkNewReq(BaseModel):
+    d: str                    # the host device_id the new key's group is for
 
 class LinkNewResp(BaseModel):
     k: str                    # 8-char key, valid 5 minutes
@@ -139,7 +154,32 @@ class GroupResp(BaseModel):
     devices: list[GroupDevice]
 
 
+# ── Licence verification (STATUS.md item 10) ────────────────────────────────
+#
+# core/licensing.py's verify_with_server() sends this and reads this back
+# already — it was written and tested against this exact shape before a
+# server existed to answer it. Unauthenticated on purpose: activating a
+# licence is how a fresh install without a device_id yet proves anything at
+# all, and the key itself is the credential being checked.
+
+class LicenseVerifyReq(BaseModel):
+    k: str                    # licence key
+    d: str = ""                # device_id, for binding/telemetry — optional,
+                               # core/licensing.py sends it whenever a device
+                               # is registered but activation does not require one
+
+class LicenseVerifyResp(BaseModel):
+    plan: str                 # "free" or "premium"
+    expires_at: float = 0     # unix timestamp; 0 means no expiry recorded
+
+
 # ── Global anonymous stats ────────────────────────────────────────────────────
+#
+# Not called by any client yet — core/syncclient.py and core/licensing.py
+# define every endpoint they actually use, and neither of them requests
+# this. Kept as a model because a caller may exist later; server/app.py does
+# not implement an endpoint for it, so there is nothing here to drift out of
+# sync with in the meantime.
 
 class GlobalStatsResp(BaseModel):
     # {category: {sec_today, users_today}}

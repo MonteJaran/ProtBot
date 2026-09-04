@@ -26,12 +26,15 @@ are the intended Premium tier — kept here in full so the plan survives.
 Usage totals aggregated across every linked device, so a daily limit applies to
 you rather than to one machine.
 
-- **Status:** client-side plumbing exists (`ui/devices_page.py`,
-  `ui/processes_page.py`, `server/models.py`), server is unversioned
-- **Blocked on:** committing the backend to this repo (AUDIT ST-05) and adding
-  API authentication (AUDIT SF-09)
+- **Status:** done in code, on both ends — the client-side plumbing
+  (`ui/devices_page.py`, `ui/processes_page.py`) and now a real, tested
+  server (`server/`) implementing every endpoint it calls. Nothing between
+  them is fake or stubbed any more.
+- **Blocked on:** deployment — a hosting decision, not a coding task. See
+  STATUS.md and `server/README.md`.
 - **Notes:** device registration, 8-char link codes and the 30-minute upload
-  protocol are already designed and partly built
+  protocol are built, authenticated (AUDIT SF-09) and rate-limited on the
+  link endpoints. `ST-05` (backend in version control) is closed.
 
 ### 2. Configurable data retention — SHIPPED
 
@@ -143,13 +146,18 @@ Premium cannot be sold at all until the monetization chain works. From
 
 - **SF-08** — mostly done. `core/licensing.py` holds the entitlement gate,
   signed and machine-bound, with a 14-day offline grace period; activation is a
-  real flow. What remains is a `/license/verify` endpoint on the server and a
-  merchant of record to sell keys
-- **SF-09** — the sync API has no authentication
-- **ST-05** — the backend is not in version control
+  real flow. `/license/verify` is now built and tested (`server/app.py`).
+  What remains is entirely outside code: a merchant of record to sell keys,
+  and the server actually running somewhere (see STATUS.md)
+- **SF-09** — fixed, client and server. Every endpoint checks the bearer
+  token against the device it claims to be for; `/link/new` and
+  `/link/join` are rate-limited. `server/`, `tests/test_server.py`
+- **ST-05** — fixed. `server/` holds a real, tested implementation now, not
+  just the request models it used to
 
-Sequence: fix SF-08 and SF-09, commit the server, integrate a merchant of
-record, *then* build features 1–7.
+Sequence: deploy the server (a hosting decision now, not a coding task —
+STATUS.md, `server/README.md`), integrate a merchant of record, *then*
+build features 1–6.
 
 ---
 

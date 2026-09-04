@@ -1,0 +1,15 @@
+# Server-only dependencies. Deliberately separate from the desktop app's
+# requirements.txt/requirements.lock: the server is never bundled into a
+# ProtBot build (see THIRD_PARTY_NOTICES.md, "what is redistributed inside
+# a ProtBot build" — this isn't), so these have no business in that file,
+# and pinning them by hash the way the desktop deps are matters less here:
+# this runs on a server you control, not on a stranger's machine that
+# already trusted a signed installer.
+#
+# Lower-bound pins only, matching requirements.txt's own stated policy
+# ("pin exactly with hashes before shipping a build") — pin exactly before
+# a real deployment, the same step AUDIT ST-01 already asked for on the
+# desktop side.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.0

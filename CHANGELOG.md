@@ -15,11 +15,25 @@ carry the relevant entry from here.
 Nothing has been released yet. Everything below is in the repository and, apart
 from the Windows-specific pieces listed in `STATUS.md` under "Never been run",
 covered by tests — but **no build has ever been produced**, so no user has run
-any of it. The first entry under a real version number will be written when
-`BUILD.md` is walked on a Windows machine.
+any of it. The sync server is the same story from the other side: tested
+through FastAPI's `TestClient`, never deployed anywhere real — see
+`server/README.md`. The first entry under a real version number will be
+written when `BUILD.md` is walked on a Windows machine.
 
 ### Added
 
+- **The sync server.** `server/` — `/register`, `/apps`, `/upload`, `/sync`,
+  `/link/new`, `/link/join`, `/group`, and `/license/verify`, a real FastAPI
+  app implementing the contract `server/models.py` already defined and both
+  clients were already written and tested against (AUDIT ST-05, SF-09).
+  Every device gets its own group from birth, so linking is "merge two
+  groups" rather than a special case; a device's contribution to a group
+  total stops counting once it has been offline for a couple of days, so an
+  idle device cannot inflate a live one's limit forever; the two link
+  endpoints are rate-limited, closing the other half of AUDIT SF-09.
+  `server/issue_license.py` is a manual bridge for granting licence keys
+  until a merchant-of-record webhook can do it automatically. Not deployed
+  anywhere — see `server/README.md` for what that still needs.
 - **PDF and Excel report export.** `core/export_xlsx.py` (a styled `.xlsx`
   workbook — header row, sized columns, frozen header) and
   `core/export_pdf.py` (a multi-page `.pdf` — title, page numbers, the same
