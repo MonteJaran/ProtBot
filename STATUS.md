@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 850 Python tests green on 3.10 and 3.12, plus 118
+**Where things stand:** 907 Python tests green on 3.10 and 3.12, plus 118
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -76,12 +76,14 @@ Finished below): `SyncClient.kt` has `manualKeyFor`/`setManualKey`/
 `clearManualKey` ready, and no screen calls them yet.
 
 ### 6. The remaining roadmap features
-In `ROADMAP.md`, all buildable, none blocking. Two are partly done already —
-see Finished below: week-over-week trends (pattern recognition item 3) and
-Excel export (item 5) both shipped free. Still open: distraction-trigger
-correlation and day-of-week clustering (rest of item 3), predictive alerts,
-PDF export, team features. None worth starting before someone has installed
-the app.
+In `ROADMAP.md`. Two items are now fully shipped, free, see Finished below:
+pattern recognition (item 3, all three pieces) and PDF/Excel report export
+(item 5, both formats). Still open: predictive alerts (deliberately not
+attempted alongside item 3 — the live half belongs in `core/monitor.py`,
+the app's one safety-critical always-running loop, and wants its own pass
+rather than being rushed in on the side; see `ROADMAP.md` item 4) and team
+features (biggest scope of anything here, its own consent surface, not
+worth starting before someone has installed the app).
 
 ---
 
@@ -127,8 +129,8 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **Keyboard navigation and a high-contrast mode (AUDIT ST-06)** | Every dialog closes on Escape; a Canvas used for scrolling — three of them, one per page — is reachable by Tab, which Tk does not do by default; the app's one click-only control (an ad banner, currently unused — `_ADS` is empty) responds to Enter/Space too. A visible focus ring on every focusable control, in both palettes: `ui/a11y.py` sets it once, application-wide, rather than per widget. `ui/theme.py` adds a second, WCAG AA-verified palette (`tests/test_theme.py` checks the actual contrast ratio, not by eye) behind a Settings toggle — restart-required, said plainly, because Tk cannot re-theme a window already on screen. What this does not do, and says so in `ui/a11y.py`: full screen-reader support. Tk does not implement MSAA or UI Automation for the widgets it draws, so NVDA or Narrator would see an unlabelled pane, not a button — closing that gap for real means a different GUI toolkit or unverifiable native interop, not a Settings screen. |
 | **Crash handling** | Unhandled exceptions on the main thread, background threads and Tk callbacks all reach the log. A frozen build has no console, so a dead monitor thread used to mean limits silently stopped being enforced while the window looked fine. |
 | **A ctypes tray icon** | Replaced pystray, which dropped the LGPL-3.0 §4 obligations that are awkward to satisfy in a frozen build. |
-| **Week-over-week usage trends** | `core/trends.py` plus `ui/insights_page.py`'s "This Week vs Last Week" card: total time this week against last week, the percent change, and up to three apps with the biggest change either direction. Free, no premium gate. Part of `ROADMAP.md` item 3 ("pattern recognition"); the other two pieces — which app tends to precede a distraction session, which days drift worst — are still open. |
-| **Excel (.xlsx) export** | `core/export_xlsx.py`, and an "Export Excel" button next to "Export CSV" in the Processes tab. Same 30-day per-app history the CSV export already sends, as a styled workbook — header row, sized columns, frozen header — instead of a flat file. Free, no premium gate. Adds `openpyxl` (MIT) as a runtime dependency, hash-pinned in `requirements.lock`, noticed in `THIRD_PARTY_NOTICES.md`. Closes the Excel half of `ROADMAP.md` item 5; PDF export is still not started. |
+| **Pattern recognition across your history (`ROADMAP.md` item 3)** | All three pieces, all free, all in `core/trends.py` + `ui/insights_page.py`. "This Week vs Last Week": total time this week against last week, the percent change, up to three apps with the biggest move either direction (`week_over_week_delta`, `biggest_movers`). "Patterns in Your History": which app tends to run right before a distraction-category session starts (`preceding_app_triggers`, reusing the page's existing `_DISTRACTING` category set rather than a new taxonomy), and average usage per day of week with how far each day drifts from the overall average (`weekday_breakdown`). `_draw_premium`'s old teasers for all three are gone; a regression test guards against teasing something already shipped as still "Planned" — this class of bug happened once already this session. |
+| **PDF and Excel report export (`ROADMAP.md` item 5)** | Both formats, both free, same 30-day per-app history the CSV export already sends. `core/export_xlsx.py` (openpyxl, MIT, hash-pinned in `requirements.lock`, noticed in `THIRD_PARTY_NOTICES.md`) builds a styled `.xlsx` workbook. `core/export_pdf.py` builds a multi-page `.pdf` by writing PDF objects directly — no library: `fpdf2` is LGPL-3.0 (the same problem class AUDIT BL-05 already fixed once, for pystray), and `reportlab` mandates Pillow (permitted under BL-05's own reasoning, but against the standing decision to keep it out — the same call `core/qrcode.py` already made). Verified against `qpdf --check` and `pdftotext`, dev-only tools, same role OpenCV/segno play for `core/qrcode.py`'s tests. "Export Excel" and "Export PDF" sit next to "Export CSV" in the Processes tab. |
 
 ### Cross-device
 

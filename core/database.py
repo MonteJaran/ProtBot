@@ -366,6 +366,53 @@ class Database:
             (start.isoformat(), end.isoformat()),
         )
 
+    def get_sessions_since(self, days: int = 30):
+        """
+        Every recorded session in the trailing `days`-day window, oldest
+        first, across every app — for core/trends.py's
+        preceding_app_triggers(), which needs each session's actual
+        start/end time rather than a per-day or per-app total.
+
+        Only sessions with a real end_time are returned: a session still in
+        progress (or one that never got a clean end, e.g. a crash) has
+        nothing to measure a gap from, so trends.py would have to special-
+        case it anyway — simpler to filter it out at the source.
+        """
+        cutoff = (date.today() - timedelta(days=days - 1)).isoformat()
+        return self._fetchall(
+            """SELECT app_id, date, start_time, end_time, duration_sec
+               FROM usage_sessions
+               WHERE date >= ? AND end_time IS NOT NULL
+               ORDER BY start_time;""",
+            (cutoff,),
+        )
+
+    def get_daily_totals(self, days: int = 28):
+        """
+        Every *calendar* day in the trailing `days`-day window (today back
+        days-1), one row each: {"date": "YYYY-MM-DD", "total_sec": int}.
+
+        Zero-usage days are included rather than silently missing — a plain
+        GROUP BY only returns days with at least one session, and
+        core/trends.py's weekday_breakdown() would then average each weekday
+        over a different, smaller sample depending on how many of its days
+        happened to have any usage at all.
+        """
+        cutoff = date.today() - timedelta(days=days - 1)
+        rows = self._fetchall(
+            """SELECT date, COALESCE(SUM(duration_sec), 0) AS total_sec
+               FROM usage_sessions
+               WHERE date >= ?
+               GROUP BY date;""",
+            (cutoff.isoformat(),),
+        )
+        by_date = {r["date"]: int(r["total_sec"]) for r in rows}
+        result = []
+        for i in range(max(0, days)):
+            d_iso = (cutoff + timedelta(days=i)).isoformat()
+            result.append({"date": d_iso, "total_sec": by_date.get(d_iso, 0)})
+        return result
+
     def get_category_usage_week(self):
         """Usage grouped by app category for this week."""
         week_ago = (date.today() - timedelta(days=6)).isoformat()

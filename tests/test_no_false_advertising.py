@@ -137,19 +137,23 @@ def test_planned_features_are_not_also_sold():
         )
 
 
-def test_excel_export_is_not_also_teased_as_planned():
+def test_shipped_features_are_not_also_teased_as_planned():
     """
-    Regression guard: core/export_xlsx.py + ui/processes_page.py:export_excel
-    ship Excel export for free. _PLANNED_FEATURES used to carry a combined
-    "PDF / Excel report export" entry that this would silently contradict —
-    exactly the insights_page.py teaser bug this session already hit once.
-    Only the still-unshipped PDF half may remain in _PLANNED_FEATURES.
+    Regression guard, one entry per feature that used to be in
+    _PLANNED_FEATURES (or a combined entry there) and has since shipped for
+    free: leaving the old wording behind would silently contradict
+    _FREE_FEATURES — exactly the insights_page.py teaser bug this session
+    already hit once. See ROADMAP.md item 3 (pattern recognition, all three
+    pieces) and item 5 (Excel and PDF export, both halves).
     """
     _free, _premium, planned = _plan_lists()
-    assert not any("excel" in f.lower() for f in planned), (
-        "Excel export ships for free (ui/processes_page.py:export_excel) but "
-        "_PLANNED_FEATURES still teases it as unavailable."
-    )
+    planned_lower = [f.lower() for f in planned]
+    shipped_substrings = ["excel", "pdf", "pattern recognition"]
+    for shipped in shipped_substrings:
+        assert not any(shipped in f for f in planned_lower), (
+            f"{shipped!r} ships for free now but _PLANNED_FEATURES still "
+            "teases it as unavailable."
+        )
 
 
 # Features that were advertised while no code implemented them. Each may only
@@ -158,7 +162,6 @@ UNIMPLEMENTED_CLAIMS = [
     "ai pattern recognition",
     "predictive distraction alerts",
     "pdf / excel report export",
-    "pdf report export",
     "team challenges",
     "unlimited data retention",
     "4 weeks data retention",
@@ -213,15 +216,28 @@ def _insights_teaser_titles():
     raise AssertionError("no `teasers = [...]` assignment found in insights_page.py")
 
 
-def test_insights_teasers_exist():
-    assert _insights_teaser_titles(), "_draw_premium records what is still to be built"
+def test_insights_teasers_list_is_well_formed():
+    # An empty list is legitimate — ROADMAP.md item 3 ("pattern recognition")
+    # is fully shipped, so there is currently nothing left for this page to
+    # preview (see _draw_premium's early return). This only checks the list
+    # parses as the shape the other tests below expect, not that it is
+    # non-empty — see test_insights_does_not_tease_a_section_it_already_ships
+    # for the actual regression guard.
+    assert isinstance(_insights_teaser_titles(), list)
 
 
 def test_insights_does_not_tease_a_section_it_already_ships():
-    # "This Week vs Last Week" (core/trends.py, ROADMAP.md item 3) shipped
-    # free — nothing in the teaser list may still claim it is only planned.
+    # Every insight that has, at some point, been teased here and later
+    # shipped for free (ROADMAP.md item 3, now complete) — nothing in the
+    # teaser list may still claim any of these is only planned.
+    shipped_substrings = [
+        "week-over-week", "week over week",
+        "distraction trigger",
+        "day-of-week", "day of week",
+    ]
     titles = [t.lower() for t in _insights_teaser_titles()]
-    assert not any("week-over-week" in t or "week over week" in t for t in titles), (
-        "insights_page.py teases week-over-week trends as 'Planned', but "
-        "_draw_trend already ships it for free. Remove the teaser."
-    )
+    for shipped in shipped_substrings:
+        assert not any(shipped in t for t in titles), (
+            f"insights_page.py still teases {shipped!r} as 'Planned', but "
+            "ROADMAP.md item 3 has shipped it for free. Remove the teaser."
+        )

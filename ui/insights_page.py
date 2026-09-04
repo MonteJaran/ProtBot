@@ -131,10 +131,23 @@ class InsightsPage(ttk.Frame):
             last_week_total = self.db.get_total_usage_sec_for_week(weeks_ago=1)
         except Exception:
             last_week_apps, this_week_total, last_week_total = [], 0, 0
+        try:
+            all_apps = self.db.get_all_tracked_apps()
+        except Exception:
+            all_apps = []
+        try:
+            recent_sessions = self.db.get_sessions_since(days=30)
+        except Exception:
+            recent_sessions = []
+        try:
+            daily_totals = self.db.get_daily_totals(days=28)
+        except Exception:
+            daily_totals = []
 
         self._draw_header()
         self._draw_top_apps(week_apps)
         self._draw_trend(week_apps, last_week_apps, this_week_total, last_week_total)
+        self._draw_patterns(recent_sessions, all_apps, daily_totals)
         self._draw_distracting(week_apps, categories)
         self._draw_productive(week_apps, categories)
         self._draw_peak_hours(peak_hours)
@@ -269,6 +282,69 @@ class InsightsPage(ttk.Frame):
                      width=20, anchor='w').pack(side='left')
             tk.Label(row, text="%s%s" % (sign, _fmt(abs(mover_delta))),
                      bg=BG2, fg=color, font=('Segoe UI', 9, 'bold')).pack(side='left')
+
+    # ── Distraction triggers, and which days run longest ──────────────────────
+    #
+    # ROADMAP.md item 3's other two "pattern recognition" pieces — used to be
+    # teased in _draw_premium below ("Distraction triggers" / "Day-of-week
+    # breakdown"); both now have a real section here, same as "This Week vs
+    # Last Week" above. core/trends.py does the arithmetic; this just renders
+    # it, and a distraction is `_DISTRACTING`-category the same way the rest
+    # of this page already defines it — no new taxonomy.
+
+    def _draw_patterns(self, recent_sessions, all_apps, daily_totals):
+        f = self._section("Patterns in Your History")
+        f.columnconfigure(0, weight=1)
+        f.columnconfigure(1, weight=1)
+
+        name_by_id = {a["id"]: a["name"] for a in all_apps}
+        distraction_ids = {a["id"] for a in all_apps if a.get("category") in _DISTRACTING}
+
+        # ── Distraction triggers ──
+        card_a = self._card(f, col=0, row=0)
+        tk.Label(card_a, text="Distraction triggers", bg=BG2, fg=TEXT,
+                 font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+        if not distraction_ids:
+            tk.Label(card_a, text="No distracting-category apps tracked yet.",
+                     bg=BG2, fg=TEXT2, font=('Segoe UI', 9), wraplength=170,
+                     justify='left').pack(anchor='w', pady=(6, 0))
+        else:
+            triggers = trends.preceding_app_triggers(recent_sessions, distraction_ids)
+            if not triggers:
+                tk.Label(card_a, text="Not enough back-to-back sessions yet.",
+                         bg=BG2, fg=TEXT2, font=('Segoe UI', 9),
+                         wraplength=170, justify='left').pack(anchor='w', pady=(6, 0))
+            else:
+                for t in triggers:
+                    row = tk.Frame(card_a, bg=BG2)
+                    row.pack(fill='x', pady=2)
+                    name = name_by_id.get(t["app_id"], "App #%s" % t["app_id"])
+                    tk.Label(row, text=name, bg=BG2, fg=TEXT, font=('Segoe UI', 9),
+                             width=16, anchor='w').pack(side='left')
+                    tk.Label(row, text="%d×" % t["count"], bg=BG2, fg=WARNING,
+                             font=('Segoe UI', 9, 'bold')).pack(side='left')
+                tk.Label(card_a, text="led into a distraction — last 30 days",
+                         bg=BG2, fg=TEXT2, font=('Segoe UI', 8)).pack(anchor='w', pady=(4, 0))
+
+        # ── Day-of-week breakdown ──
+        card_b = self._card(f, col=1, row=0)
+        tk.Label(card_b, text="Day-of-week breakdown", bg=BG2, fg=TEXT,
+                 font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+        weekdays = trends.weekday_breakdown(daily_totals)
+        if not weekdays:
+            tk.Label(card_b, text="Not enough history yet.",
+                     bg=BG2, fg=TEXT2, font=('Segoe UI', 9)).pack(anchor='w', pady=(6, 0))
+        else:
+            worst = weekdays[0]
+            tk.Label(card_b, text=worst["name"], bg=BG2, fg=ERROR,
+                     font=('Segoe UI', 14, 'bold')).pack(anchor='w', pady=(6, 0))
+            tk.Label(card_b, text="%s average" % _fmt(worst["avg_sec"]),
+                     bg=BG2, fg=TEXT2, font=('Segoe UI', 9)).pack(anchor='w')
+            if worst["drift_pct"] is not None and worst["drift_pct"] > 0:
+                tk.Label(card_b, text="+%.0f%% vs your daily average" % worst["drift_pct"],
+                         bg=BG2, fg=ERROR, font=('Segoe UI', 9, 'bold')).pack(anchor='w', pady=(2, 0))
+            tk.Label(card_b, text="last 28 days", bg=BG2, fg=TEXT2,
+                     font=('Segoe UI', 8)).pack(anchor='w', pady=(4, 0))
 
     # ── Distracting apps — "time cost" framing ────────────────────────────────
 
@@ -505,25 +581,25 @@ class InsightsPage(ttk.Frame):
         reads as a real finding and is a false claim about that person's own
         data. See ROADMAP.md and AUDIT.md BL-02.
         """
-        f = self._section("\u25cb  Advanced Insights  \u2014  Planned", color=TEXT2)
+        # Week-over-week trends, distraction triggers and the day-of-week
+        # breakdown were all teased here at one point or another, and each
+        # now has its own real section above — ROADMAP.md item 3 ("pattern
+        # recognition") is fully shipped. A teaser for something already
+        # shipped and free would be the mirror image of the thing this
+        # method's own docstring warns against: not an invented finding, but
+        # an invented *absence* of one.
+        teasers = []
 
-        # Week-over-week trends used to be teased here and now has its own
-        # real section above ("This Week vs Last Week") — see ROADMAP.md
-        # item 3. A teaser for something already shipped and free would be
-        # the mirror image of the thing this method's own docstring warns
-        # against: not an invented finding, but an invented *absence* of one.
-        teasers = [
-            {
-                "title":   "Distraction triggers",
-                "preview": "Which app you tend to open\nright after closing another",
-                "sub":     "Computed from your own session history",
-            },
-            {
-                "title":   "Day-of-week breakdown",
-                "preview": "Which days run longest,\nand by how much",
-                "sub":     "Plan your week around your weak spots",
-            },
-        ]
+        if not teasers:
+            # Nothing left to preview here right now. ROADMAP.md's other
+            # open items — predictive alerts, PDF export, team features —
+            # live in ui/devices_page.py's own _PLANNED_FEATURES, not this
+            # page; an empty "Planned" section with nothing under it would
+            # look broken, or worse, read as a claim that nothing else is
+            # planned anywhere.
+            return
+
+        f = self._section("\u25cb  Advanced Insights  \u2014  Planned", color=TEXT2)
 
         for i in range(len(teasers)):
             f.columnconfigure(i, weight=1)

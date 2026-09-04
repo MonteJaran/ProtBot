@@ -49,6 +49,8 @@ _FREE_FEATURES = [
     "Usage insights: peak hours, categories, top apps",
     "CSV export",
     "Excel (.xlsx) export",
+    "PDF report export",
+    "Pattern recognition across your history",
     "All data stored locally on your PC",
     "Automatic cleanup of old history",
     "Scheduled focus hours",
@@ -63,9 +65,7 @@ _PREMIUM_FEATURES: list = []
 # it works end to end in the shipped build.
 _PLANNED_FEATURES = [
     "Cross-device sync",
-    "Pattern recognition across your history",
     "Predictive distraction alerts",
-    "PDF report export",
     "Team challenges & leaderboards",
     "Priority support",
 ]

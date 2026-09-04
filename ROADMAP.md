@@ -42,48 +42,69 @@ you rather than to one machine.
   someone pay to keep their own history is a poor trade, and the database
   indices (SF-11) solved the performance half of the problem anyway.
 
-### 3. Pattern recognition across your history
+### 3. Pattern recognition across your history — SHIPPED
 Surface real patterns from recorded usage: which app tends to precede a long
 distraction session, which days drift worst, how a week compares to the last.
 
-- **Status:** partly started. "How a week compares to the last" is live and
-  free — `core/trends.py` (`week_over_week_delta`, `biggest_movers`) plus
-  `ui/insights_page.py`'s "This Week vs Last Week" section, both this
-  week's total against last week's and which apps moved the most, either
-  direction. Still not started: which app precedes a distraction session
-  (correlation between app launches) and which days drift worst
-  (time-of-day / day-of-week clustering) — both still teased as "Planned"
-  in `ui/insights_page.py`'s `_draw_premium`.
-- **Blocked on:** nothing for the two remaining pieces — retention (done)
-  was the only blocker and it is shipped.
+- **Status:** done, all three pieces, all free. `core/trends.py`:
+  `week_over_week_delta` / `biggest_movers` (this week vs last),
+  `preceding_app_triggers` (which app tends to run right before a
+  distraction-category session starts), `weekday_breakdown` (average usage
+  per day of week, and how far each day drifts from the overall average).
+  `ui/insights_page.py` renders all three — "This Week vs Last Week" and
+  "Patterns in Your History" (distraction triggers + day-of-week
+  breakdown). `_draw_premium`'s old teasers for these are gone.
 - **Notes:** was advertised as "AI pattern recognition". Plain statistics
   over the existing `usage_sessions` table, no model — genuinely useful on
-  its own. Only call it AI if a model is actually involved.
-
+  its own. Only call it AI if a model is actually involved. "Distraction"
+  reuses `ui/insights_page.py`'s existing `_DISTRACTING` category set
+  rather than inventing a second taxonomy.
 
 ### 4. Predictive distraction alerts
 Warn *before* a distraction session starts, based on time of day and what was
 just opened.
 
-- **Status:** not started
-- **Blocked on:** #3
+- **Status:** not started. #3 shipped, so the statistics this would be
+  built on already exist (`core/trends.py`) — the part not started is the
+  live half: catching the moment a session opens and deciding, in real
+  time, whether to warn.
+- **Blocked on:** nothing, but deliberately not attempted alongside #3.
+  `core/monitor.py` is the one safety-critical, always-running loop in this
+  app (limit enforcement, the kill watcher, grace periods) — a live "warn
+  right now" hook belongs there, not bolted on separately, and that is a
+  different, higher-stakes kind of change than a statistics function
+  rendered on a tab someone opens when they feel like it. Wants its own
+  pass rather than being rushed in on the back of a pattern-recognition
+  session.
 - **Notes:** the honest v1 is a threshold rule ("you have opened this app at
-  this hour on 4 of the last 5 days"), not a prediction model
+  this hour on 4 of the last 5 days"), not a prediction model. A passive
+  Insights-tab card reusing `preceding_app_triggers`/`weekday_breakdown`
+  would technically be buildable today, but "alerts" means something that
+  reaches the user *at* the risky moment — a retrospective report on a tab
+  they have to go open is a different feature wearing this one's name, and
+  advertising it as this one is exactly what AUDIT BL-02 exists to catch.
 
-### 5. PDF / Excel report export
+### 5. PDF / Excel report export — SHIPPED
 Formatted weekly and monthly reports.
 
-- **Status:** partly started. Excel export is live and free —
-  `core/export_xlsx.py` builds a styled `.xlsx` workbook (header row, sized
-  columns, frozen header) from the same 30-day per-app history CSV export
-  already uses; `ui/processes_page.py:export_excel` wires it to an "Export
-  Excel" button next to "Export CSV". PDF is still not started.
-- **Blocked on:** nothing for PDF.
+- **Status:** done, both halves, both free. `core/export_xlsx.py` builds a
+  styled `.xlsx` workbook (header row, sized columns, frozen header);
+  `core/export_pdf.py` builds a multi-page `.pdf` (title, page numbers,
+  the same table). Both read the same 30-day per-app history the existing
+  CSV export already sends. `ui/processes_page.py` wires "Export Excel"
+  and "Export PDF" buttons next to "Export CSV".
 - **Notes:** Excel export added `openpyxl` (MIT) as a runtime dependency —
   checked against the packaging decision in AUDIT BL-05, hash-pinned in
-  `requirements.lock`, notice added to `THIRD_PARTY_NOTICES.md`. PDF would
-  add `reportlab` or `weasyprint` — check those licences the same way before
-  starting it.
+  `requirements.lock`, notice added to `THIRD_PARTY_NOTICES.md`. PDF export
+  added **no** dependency: `fpdf2` is LGPL-3.0 (the exact problem BL-05
+  already fixed once, for pystray — reintroducing that class of licence for
+  a report-export feature would undo the fix), and `reportlab`, while BSD
+  itself, mandates Pillow — permitted under BL-05's own reasoning (Pillow's
+  licence was never the problem, pystray's was) but against the standing
+  decision to keep it out, the same call `core/qrcode.py` already made for
+  the same reason. `core/export_pdf.py` writes PDF objects directly instead
+  — verified against `qpdf --check` and `pdftotext`, dev-time tools only,
+  same role OpenCV/segno play for `core/qrcode.py`'s tests.
 
 ### 6. Team challenges & leaderboards
 Shared goals across a group of linked users.

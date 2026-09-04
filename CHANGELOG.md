@@ -20,18 +20,23 @@ any of it. The first entry under a real version number will be written when
 
 ### Added
 
-- **Excel (.xlsx) export.** `core/export_xlsx.py`, and an "Export Excel"
-  button next to "Export CSV" in the Processes tab. The same 30-day per-app
-  usage history the CSV export already sends, as a styled workbook — header
-  row, sized columns, frozen header — instead of a flat file. Free, no
-  premium gate. Closes the Excel half of `ROADMAP.md`'s "PDF / Excel report
-  export"; PDF is still not started.
-- **Week-over-week usage trends.** `core/trends.py` and a new "This Week vs
-  Last Week" card on the Insights tab: total time this week against last
-  week, the percent change, and up to three apps with the biggest change
-  either direction. Free, no premium gate. Part of `ROADMAP.md`'s "pattern
-  recognition" item — plain statistics over the existing usage table, no
-  model involved.
+- **PDF and Excel report export.** `core/export_xlsx.py` (a styled `.xlsx`
+  workbook — header row, sized columns, frozen header) and
+  `core/export_pdf.py` (a multi-page `.pdf` — title, page numbers, the same
+  table), both from the same 30-day per-app history the CSV export already
+  sends. "Export Excel" and "Export PDF" sit next to "Export CSV" in the
+  Processes tab. Free, no premium gate — closes `ROADMAP.md`'s "PDF / Excel
+  report export" completely. The PDF half writes its own PDF objects rather
+  than depending on a library: `fpdf2` is LGPL-3.0, and `reportlab` pulls in
+  Pillow — `core/export_pdf.py`'s own docstring has the full reasoning.
+- **Pattern recognition across your history, complete.** `core/trends.py`
+  gained `preceding_app_triggers` (which app tends to run right before a
+  distraction-category session starts) and `weekday_breakdown` (average
+  usage per day of the week, and how far each day drifts from the overall
+  average), joining the week-over-week comparison already there. Both
+  render on the Insights tab's new "Patterns in Your History" section.
+  Free, no premium gate — plain statistics over the existing usage table,
+  no model involved, closing `ROADMAP.md`'s "pattern recognition" item.
 - **Matching an app across devices by hand.** The automatic name-based join
   (`canonical_app_key`) cannot resolve every pair — a package named after
   its vendor rather than its product, like Firefox.exe and
