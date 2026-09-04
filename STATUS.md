@@ -90,6 +90,20 @@ and the device id travels, never the underlying usage pattern — the
 parent already has their own name for that device, so an id is enough to
 identify which one.
 
+### 7. Recovered scope — from two old builds, not built here yet
+Two old builds surfaced during this project (a Windows child-agent `.exe`
+with a live Firebase backend, and a React Native/Expo phone app for iOS
+and Android) turned out to be a far more feature-complete system than
+ProtBot is today. `ROADMAP.md`'s new "Recovered scope" section (items
+9–22) lists what they had that ProtBot doesn't: anti-tamper hardening, a
+parent PIN, web filtering, on-request location, a "request more time"
+approval flow, new-app detection, a weekly parent-facing report, an SOS
+alert, a remote command channel, a token/chores/prizes economy, parent↔
+child chat, geofencing, and — the biggest single item — an iOS app.
+Nothing there is committed to; all of it is `not started`, to be built
+fresh in ProtBot's own stack if and when it's wanted, not ported from
+either old build.
+
 ---
 
 ## Written but never executed

@@ -150,6 +150,135 @@ A commitment, not a feature.
 
 ---
 
+## Recovered scope — found in two old builds, not yet in ProtBot
+
+Two builds of an earlier, much more feature-complete system turned up
+during this project (`FocusGuardChild_1.exe` — a Windows child agent with a
+live Firebase backend, and a React Native/Expo phone app covering iOS and
+Android). Neither build itself is part of ProtBot and neither is being
+touched further — this section is the feature list they surfaced, to be
+built fresh in ProtBot's own stack (Python/Tkinter desktop, Kotlin Android,
+the FastAPI `server/`) if and when each is wanted. Nothing here is
+committed; everything is `not started`.
+
+### 9. Anti-tamper hardening (Windows)
+A scheduled-task watchdog that relaunches ProtBot if it's killed, admin
+auto-elevation with no UAC prompt at every logon (a task run at `/rl
+highest`), and an ACL lock on the install folder so a standard account
+gets read+execute only — even from a terminal.
+- **Status:** not started.
+- **Notes:** three separate, independently-useful pieces; the watchdog and
+  elevation depend on each other, the folder lock doesn't. None of them
+  hide the app — it stays visible in Task Manager, consistent with this
+  project's consent-based positioning (see AUDIT BL-01 and the ads note
+  below for why that posture matters generally).
+
+### 10. Parent PIN
+A PIN a parent sets, required to quit ProtBot (and, later, to uninstall
+it) once one exists.
+- **Status:** not started.
+- **Notes:** needs a settings UI plus hashed storage (pbkdf2 + salt, not
+  plaintext). Standalone — doesn't need #9 first.
+
+### 11. Shutdown-as-consequence for a force-killed session
+If ProtBot wasn't closed via the PIN flow, optionally shut the PC down
+with a warning; the PIN cancels it.
+- **Status:** not started.
+- **Note — decide deliberately before building:** this is a real step up
+  in aggressiveness from anything ProtBot does today (closing an *app*
+  vs. shutting down the whole PC). Worth being sure this is the tone
+  wanted, the same way team challenges (#6) got a deliberate "no."
+
+### 12. Web filtering
+DNS-level blocking (point network adapters at a filtering resolver —
+CleanBrowsing or Cloudflare for Families, both free) plus browser
+window-title matching as a crude backstop for what DNS misses.
+- **Status:** not started — a new capability area. ProtBot tracks app
+  usage only today; nothing looks at web content at all.
+- **Notes:** needs admin (same elevation as #9). Deliberately not a local
+  TLS-intercepting proxy — that needs installing a root certificate,
+  a real security trade-off for a home user to take on.
+
+### 13. Location on request
+A parent requests it, the device answers once (OS location API, falling
+back to IP-level geolocation) — never polled continuously.
+- **Status:** not started.
+- **Notes:** real privacy and legal weight — put it on the lawyer list
+  (STATUS.md) before building, not after.
+
+### 14. "Request more time," with parent approval
+The tracked person asks for extra minutes (optionally scoped to one app,
+with a short reason); a parent approves or declines remotely.
+- **Status:** not started.
+- **Blocked on:** a server endpoint for the request/approval round trip —
+  `server/app.py` has nothing like this yet.
+
+### 15. New-app detection
+Notice when an app outside the tracked list gets installed or opened, and
+optionally hold it pending a parent's approval, rather than only ever
+tracking apps someone added by hand.
+- **Status:** not started.
+
+### 16. Weekly summary report, sent to the parent
+- **Status:** partly there. The actual statistics already exist and run
+  entirely on-device (`core/trends.py`) — what's missing is packaging one
+  into a summary, a server endpoint to receive it, and a parent-side view.
+  Not new analysis work, just plumbing.
+
+### 17. SOS / emergency alert
+One tap notifies every linked parent, with a location if one is available.
+- **Status:** not started.
+- **Notes:** should never be gated behind a paid tier — this is a safety
+  feature, not a premium one.
+
+### 18. Remote command channel
+A parent pushes a command to a linked device; the device acknowledges.
+- **Status:** not started.
+- **Blocked on:** new server endpoints (nothing in `server/app.py` does
+  this today) and a client-side poll/handler on each platform. Biggest
+  "what would it even do" question of anything on this list — needs a
+  concrete first command (lock now? something smaller?) before it's
+  buildable at all, not just server plumbing.
+
+### 19. Token economy, chores, and prize redemption
+Earn tokens for staying under a limit, spend them for extra minutes,
+optionally gift them to a sibling; a separate chores list with parent
+approval; a parent-managed catalog of real-world prizes tokens can be
+redeemed for.
+- **Status:** not started.
+- **Blocked on:** real server-side balance/transaction logic — `server/`
+  has nothing like an account balance today, and getting "spend" right
+  (no double-spend across two devices) is its own small design problem,
+  not just a table.
+- **Notes:** three features but one dependency chain — chores and prizes
+  both assume the token balance exists first.
+
+### 20. Parent↔child chat
+Text messaging between linked devices.
+- **Status:** not started.
+- **Notes:** decide deliberately before building — real moderation and
+  privacy surface, the same category of decision team challenges (#6)
+  got a "no" on. Not a default-yes just because the old system had it.
+
+### 21. Geofencing ("Places")
+Parent sets one or more locations, gets notified on arrival/departure.
+- **Status:** not started.
+- **Notes:** heavier than #13 — continuous rather than on-request. Same
+  lawyer-list flag, more so.
+
+### 22. An iOS app
+ProtBot has no iOS presence today — Windows desktop and Android only.
+- **Status:** not started. Biggest single item on this whole list.
+- **Notes:** the old system used Apple's actual Screen Time API (Family
+  Controls / DeviceActivity / ManagedSettings, via `react-native-device-
+  activity`) — the real, Apple-sanctioned way to build this on iOS, not a
+  workaround. A new ProtBot iOS app means a real build from scratch
+  against that framework, in whatever stack gets chosen — nothing here
+  carries over as code, only the fact that this is the right API to
+  target.
+
+---
+
 ## Before any of this ships
 
 Premium cannot be sold at all until the monetization chain works. From
