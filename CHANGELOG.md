@@ -15,11 +15,67 @@ carry the relevant entry from here.
 Nothing has been released yet. Everything below is in the repository and, apart
 from the Windows-specific pieces listed in `STATUS.md` under "Never been run",
 covered by tests — but **no build has ever been produced**, so no user has run
-any of it. The first entry under a real version number will be written when
-`BUILD.md` is walked on a Windows machine.
+any of it. The sync server is the same story from the other side: tested
+through FastAPI's `TestClient`, never deployed anywhere real — see
+`server/README.md`. The first entry under a real version number will be
+written when `BUILD.md` is walked on a Windows machine.
 
 ### Added
 
+- **The sync server.** `server/` — `/register`, `/apps`, `/upload`, `/sync`,
+  `/link/new`, `/link/join`, `/group`, and `/license/verify`, a real FastAPI
+  app implementing the contract `server/models.py` already defined and both
+  clients were already written and tested against (AUDIT ST-05, SF-09).
+  Every device gets its own group from birth, so linking is "merge two
+  groups" rather than a special case; a device's contribution to a group
+  total stops counting once it has been offline for a couple of days, so an
+  idle device cannot inflate a live one's limit forever; the two link
+  endpoints are rate-limited, closing the other half of AUDIT SF-09.
+  `server/issue_license.py` is a manual bridge for granting licence keys
+  until a merchant-of-record webhook can do it automatically. Not deployed
+  anywhere — see `server/README.md` for what that still needs.
+- **PDF and Excel report export.** `core/export_xlsx.py` (a styled `.xlsx`
+  workbook — header row, sized columns, frozen header) and
+  `core/export_pdf.py` (a multi-page `.pdf` — title, page numbers, the same
+  table), both from the same 30-day per-app history the CSV export already
+  sends. "Export Excel" and "Export PDF" sit next to "Export CSV" in the
+  Processes tab. Free, no premium gate — closes `ROADMAP.md`'s "PDF / Excel
+  report export" completely. The PDF half writes its own PDF objects rather
+  than depending on a library: `fpdf2` is LGPL-3.0, and `reportlab` pulls in
+  Pillow — `core/export_pdf.py`'s own docstring has the full reasoning.
+- **Pattern recognition across your history, complete.** `core/trends.py`
+  gained `preceding_app_triggers` (which app tends to run right before a
+  distraction-category session starts) and `weekday_breakdown` (average
+  usage per day of the week, and how far each day drifts from the overall
+  average), joining the week-over-week comparison already there. Both
+  render on the Insights tab's new "Patterns in Your History" section.
+  Free, no premium gate — plain statistics over the existing usage table,
+  no model involved, closing `ROADMAP.md`'s "pattern recognition" item.
+- **Matching an app across devices by hand.** The automatic name-based join
+  (`canonical_app_key`) cannot resolve every pair — a package named after
+  its vendor rather than its product, like Firefox.exe and
+  `org.mozilla.firefox`, needs a brand list no string rule has. The Devices
+  tab's new "Match Apps…" dialog lets the user give an app the same sync
+  key on both devices instead, closing the gap by hand. Mirrored in the
+  Android app's `SyncClient.kt` data layer, ready for the screen that will
+  eventually call it.
+- **ProtBot is now an installable package.** `pyproject.toml` declares a
+  real build backend and a `protbot` console-script entry point
+  (`pip install -e .`, then `protbot`). `main.py` no longer reaches `core/`
+  and `ui/` with `sys.path.insert` — a trick that only ever worked because
+  `main.py` happens to sit at the repo root beside them.
+- **Keyboard navigation and a high-contrast mode** (AUDIT ST-06). Every
+  dialog closes on Escape; every scrollable area is reachable by Tab, which
+  Tk does not do by default for the Canvas widgets three of the six tabs use
+  for it; a visible focus ring on every control, applied once, application-
+  wide (`ui/a11y.py`), rather than per widget. A second colour palette
+  (`ui/theme.py`), checked against the real WCAG contrast formula rather
+  than by eye, behind a Settings toggle — takes effect on next launch, not
+  live, because Tk has no way to re-theme a window already built. Full
+  screen-reader support is not part of this: Tk does not implement the
+  Windows accessibility APIs a screen reader needs, and closing that gap for
+  real would mean a different GUI toolkit or native interop this project has
+  no way to verify — see `ui/a11y.py` and `STATUS.md`.
 - **Linking a phone to a PC by QR code.** The PC shows a code, the phone scans
   it, and the two join a sync group. The eight characters stay on screen beside
   it, because a camera that will not focus is a bad reason to be unable to link
@@ -69,6 +125,13 @@ any of it. The first entry under a real version number will be written when
 
 ### Changed
 
+- **Licence confirmed: proprietary, not open source.** `LICENSE` already
+  said exactly that (all-rights-reserved, no redistribution or derivative
+  works) — an owner decision, not a code change, now settled rather than
+  open.
+- **CI is back on.** `.github/workflows/ci.yml`, including a new `server`
+  job running `tests/test_server.py`. Still fails until GitHub billing is
+  paid — a billing setting, not a code problem.
 - **Renamed from FocusGuard to ProtBot**, including the data directory.
   `core/paths.py` migrates an existing `%LOCALAPPDATA%\FocusGuard` folder on
   first run, never overwriting newer data and never deleting the old folder if
@@ -80,6 +143,12 @@ any of it. The first entry under a real version number will be written when
   satisfy in a frozen build.
 - **Dependencies are pinned by exact version and SHA-256 hash**
   (`requirements.lock`).
+
+### Removed
+
+- **Team challenges & leaderboards**, from the roadmap. Owner's call: not
+  necessary. Never advertised, never built — `ROADMAP.md` item 6 keeps the
+  record so it isn't re-proposed without knowing it was already declined.
 
 ### Fixed
 
@@ -100,3 +169,29 @@ any of it. The first entry under a real version number will be written when
   with a test that fails the build if one returns.
 - **The plan comparison advertised features that did not exist.** Removed, with
   a test that fails if an unimplemented feature is listed as included.
+- **Registering a device from the Devices tab silently used the wrong
+  endpoint.** `ui/devices_page.py` posted to `/r`; the rest of the app has
+  always meant `/register`. It was also a second, older, unauthenticated
+  implementation of registration and device linking that never called the
+  tested `core/syncclient.py` / `core/linking.py` it duplicated — now removed
+  in favour of the one implementation both use.
+- **The Processes tab's "cross-device" rows read server fields that were
+  never specified anywhere.** A leftover from before the sync protocol was
+  hardened, hit an unauthenticated `GET /sync/{device_id}` endpoint of its
+  own, and rendered names and per-device breakdowns `server/models.py`'s
+  `SyncResp` was never defined to return. Removed; the number it was trying
+  to show already reaches each app's usage total through the authenticated
+  sync client.
+
+### Security
+
+- **The sync API now authenticates its requests (AUDIT SF-09).** A device id
+  was the whole credential, and it travelled in places a plain identifier
+  should not have to be treated as one — a URL path, in one of the three
+  client implementations this turned out to have. Registration now also
+  returns a bearer token, sent as `Authorization: Bearer <token>` on every
+  request after; `/group` (the Devices tab's linked-device list) carries no
+  device id at all, in a path or a body — the token alone says whose group to
+  list. Both clients — desktop and the Android app's `SyncClient.kt` — do
+  this the same way. What this does not do: there is still no server to
+  check the token against (see `STATUS.md`).

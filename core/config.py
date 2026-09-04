@@ -43,6 +43,10 @@ DEFAULT_CONFIG: dict = {
     # database from growing for as long as ProtBot stays installed.
     "retention_days": 365,
     "first_run": True,
+    # AUDIT ST-06. A restart-required setting, not a live one — see
+    # ui/theme.py's module docstring for why Tk cannot re-theme a window
+    # that is already built.
+    "high_contrast": False,
     # Privacy consent (see core/consent.py). 0 = never accepted; the app shows
     # the consent gate and records nothing until this matches CONSENT_VERSION.
     "consent_version": 0,
@@ -50,6 +54,9 @@ DEFAULT_CONFIG: dict = {
     "consent_at": "",
     # Device & plan
     "device_id": "",               # 24-char server-assigned ID
+    # The sync bearer token from registration — the actual credential from
+    # here on, not the device id. See AUDIT SF-09 and server/models.py note 4.
+    "device_token": "",
     "server_url": "https://api-tk3y3h4s3q-uc.a.run.app",  # Firebase Cloud Functions
     # Entitlement is NOT stored here as a plain value any more: that made it a
     # one-word edit in a text file. It lives under "entitlement", signed, and
@@ -57,6 +64,10 @@ DEFAULT_CONFIG: dict = {
     "entitlement": {},
     "linked_devices": [],          # [{id, name, last_seen}, ...]
     "server_app_ids": {},          # {local_db_id: server_id} mapping
+    # {local_db_id: key} — a user-typed sync key for an app canonical_app_key
+    # could not resolve to the same one on another device. See
+    # core/syncclient.py's set_manual_key and STATUS.md.
+    "sync_key_overrides": {},
 }
 
 

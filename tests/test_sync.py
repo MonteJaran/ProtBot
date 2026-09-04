@@ -216,6 +216,52 @@ class TestBuildUpload:
         assert payload == {}
 
 
+class TestManualKeyOverrides:
+    """
+    canonical_app_key is a best-effort guess (TestCanonicalAppKey above has
+    the case it cannot resolve: Firefox.exe vs org.mozilla.firefox). This is
+    the fallback — build_app_sync's half of it; core.syncclient's
+    set_manual_key/manual_key_for/clear_manual_key is the other half,
+    covered in TestMatchingAppsByHand below.
+    """
+
+    def test_an_override_replaces_the_computed_key(self):
+        payload = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Firefox.exe", "category": "Web"}],
+            overrides={1: "firefox"},
+        )
+        assert payload["a"] == [[1, "firefox", "Web"]]
+
+    def test_a_string_keyed_override_works_the_same_as_an_int_one(self):
+        # config.json round-trips int keys as strings; this must not care.
+        payload = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Firefox.exe"}],
+            overrides={"1": "firefox"},
+        )
+        assert payload["a"] == [[1, "firefox", ""]]
+
+    def test_apps_with_no_override_still_use_the_computed_key(self):
+        payload = syncproto.build_app_sync(
+            "dev123",
+            [{"id": 1, "name": "Firefox.exe"}, {"id": 2, "name": "Discord.exe"}],
+            overrides={1: "firefox"},
+        )
+        assert payload["a"] == [[1, "firefox", ""], [2, "discord", ""]]
+
+    def test_no_overrides_at_all_behaves_exactly_as_before(self):
+        apps = [{"id": 1, "name": "Discord.exe", "category": "Social"}]
+        assert (syncproto.build_app_sync("dev123", apps)
+                == syncproto.build_app_sync("dev123", apps, overrides=None)
+                == syncproto.build_app_sync("dev123", apps, overrides={}))
+
+    def test_an_override_for_an_unrelated_app_id_does_nothing(self):
+        payload = syncproto.build_app_sync(
+            "dev123", [{"id": 1, "name": "Discord.exe"}],
+            overrides={999: "something-else"},
+        )
+        assert payload["a"] == [[1, "discord", ""]]
+
+
 # ── Hostile responses ─────────────────────────────────────────────────────
 
 class TestParsing:
@@ -318,8 +364,10 @@ class TestSyncIsOffUntilTheUserTurnsItOn:
         assert transport.requests == []
 
     def test_unregistering_forgets_the_mapping_too(self, config, synced):
+        config.set("device_token", "secret-tok")
         syncclient.unregister_device(config)
         assert config.get("device_id") == ""
+        assert config.get("device_token") == ""
         assert config.get("server_app_ids") == {}
 
 
@@ -425,6 +473,157 @@ class TestOneSyncCycle:
         assert syncclient.ENDPOINT_APPS in transport.paths()
 
 
+class TestAuthentication:
+    """
+    AUDIT SF-09: the device id was the whole credential, and it travelled
+    somewhere a server or proxy would log it. A token from registration, sent
+    as a header, is what makes a leaked device id alone useless.
+    """
+
+    def test_the_stored_token_is_armed_onto_the_transport_before_a_cycle(
+            self, db, config, synced):
+        config.set("device_token", "secret-tok")
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+
+        # FakeTransport does not build headers itself — this proves the
+        # client hands the token to whatever transport it holds, which is
+        # what the real Transport.post() then turns into the header. See
+        # TestTheTransportSendsTheBearerToken for the header itself.
+        assert transport.token == "secret-tok"
+
+    def test_no_stored_token_means_none_is_armed(self, db, config, synced):
+        # No registration has ever happened against the version of the
+        # server that hands one out — degrade to the same unauthenticated
+        # request rather than sending a garbage header.
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+        assert transport.token == ""
+
+    def test_a_changed_token_replaces_the_old_one_next_cycle(
+            self, db, config, synced):
+        # Re-registration can happen without restarting the process; the next
+        # cycle must not keep sending a token that is no longer valid.
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        client = SyncClient(db, config, transport=transport)
+
+        config.set("device_token", "first-tok")
+        client.sync_once()
+        assert transport.token == "first-tok"
+
+        config.set("device_token", "second-tok")
+        client.sync_once()
+        assert transport.token == "second-tok"
+
+    def test_status_reports_how_many_devices_are_in_the_group(
+            self, db, config, synced):
+        transport = FakeTransport({
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {"42": 600}, "devices": 3},
+        })
+        client = SyncClient(db, config, transport=transport)
+        client.sync_once()
+        assert client.status()["devices"] == 3
+
+    def test_status_defaults_devices_to_zero_before_ever_syncing(
+            self, db, config):
+        assert SyncClient(db, config, transport=FakeTransport()).status()["devices"] == 0
+
+
+class TestMatchingAppsByHand:
+    """
+    core.syncclient's half of the manual-key fallback — see
+    TestManualKeyOverrides above for build_app_sync's. STATUS.md:
+    canonical_app_key cannot resolve every pair (Firefox.exe never meets
+    org.mozilla.firefox on its own), and this is what closes that case —
+    letting the user say "these two are the same app" on both devices
+    rather than counting one app twice.
+    """
+
+    def test_no_override_by_default(self, config):
+        assert syncclient.manual_key_for(config, 1) == ""
+
+    def test_setting_one_makes_it_come_back(self, config):
+        syncclient.set_manual_key(config, 1, "firefox")
+        assert syncclient.manual_key_for(config, 1) == "firefox"
+
+    def test_it_is_normalised_the_same_way_canonical_app_key_normalises_everything(
+            self, config):
+        # What the caller sees back is exactly what has to match on the
+        # other device — not raw text that merely looks similar.
+        stored = syncclient.set_manual_key(config, 1, "  Firefox.EXE  ")
+        assert stored == "firefox"
+        assert syncclient.manual_key_for(config, 1) == "firefox"
+
+    def test_setting_it_to_noise_only_text_clears_it_instead(self, config):
+        # An empty key is not "no override" — it is the one string every
+        # other unresolved app would also collide on. See canonical_app_key.
+        syncclient.set_manual_key(config, 1, "firefox")
+        stored = syncclient.set_manual_key(config, 1, "   !!!   ")
+        assert stored == ""
+        assert syncclient.manual_key_for(config, 1) == ""
+
+    def test_clear_manual_key_goes_back_to_automatic(self, config):
+        syncclient.set_manual_key(config, 1, "firefox")
+        syncclient.clear_manual_key(config, 1)
+        assert syncclient.manual_key_for(config, 1) == ""
+
+    def test_it_does_not_disturb_a_different_apps_override(self, config):
+        syncclient.set_manual_key(config, 1, "firefox")
+        syncclient.set_manual_key(config, 2, "chrome")
+        syncclient.clear_manual_key(config, 1)
+        assert syncclient.manual_key_for(config, 1) == ""
+        assert syncclient.manual_key_for(config, 2) == "chrome"
+
+    def test_setting_it_drops_the_cached_server_id(self, config, synced):
+        # _ensure_app_ids only re-sends an app already missing from
+        # server_app_ids — an override that did not do this would sit
+        # unused until the app was untracked and retracked.
+        assert config.get("server_app_ids") == {str(synced): 42}
+        syncclient.set_manual_key(config, synced, "discord-alt")
+        assert str(synced) not in config.get("server_app_ids")
+
+    def test_setting_it_to_the_same_key_still_drops_the_mapping(self, config, synced):
+        # No special-casing "the key did not actually change" — simpler, and
+        # the cost is one redundant /apps entry, not a wrong merge.
+        syncclient.set_manual_key(config, synced, "discord")
+        assert str(synced) not in config.get("server_app_ids")
+
+    def test_clearing_also_drops_the_cached_server_id(self, config, synced):
+        syncclient.set_manual_key(config, synced, "discord-alt")
+        config.set("server_app_ids", {str(synced): 99})   # simulate a re-sync
+        syncclient.clear_manual_key(config, synced)
+        assert str(synced) not in config.get("server_app_ids")
+
+    def test_a_sync_cycle_sends_the_override_and_updates_the_mapping(
+            self, db, config, synced):
+        # "our-discord" normalises to "ourdiscord" (canonical_app_key drops
+        # punctuation, same as everywhere else) — set_manual_key's own
+        # return value is exactly this, which is what the test asserts on.
+        stored_key = syncclient.set_manual_key(config, synced, "our-discord")
+
+        transport = FakeTransport({
+            syncclient.ENDPOINT_APPS: {"m": {str(synced): 77}},
+            syncclient.ENDPOINT_UPLOAD: {"ok": 1},
+            syncclient.ENDPOINT_SYNC: {"apps": {}},
+        })
+        SyncClient(db, config, transport=transport).sync_once()
+
+        apps_payload = transport.payload_for(syncclient.ENDPOINT_APPS)
+        assert apps_payload["a"] == [[synced, stored_key, "Social"]]
+        # The server's answer under the new key is what gets used from here.
+        assert config.get("server_app_ids") == {str(synced): 77}
+
+
 class TestStaleDataIsNotEnforcedAgainst:
 
     def test_a_figure_older_than_the_stale_window_is_dropped(self, db, config, synced):
@@ -465,20 +664,56 @@ class TestStaleDataIsNotEnforcedAgainst:
 class TestRegistration:
 
     def test_registering_stores_the_id_the_server_gave(self, config):
-        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        transport = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
         assert syncclient.register_device(config, "my-pc", transport=transport) == "abc123"
         assert config.get("device_id") == "abc123"
 
+    def test_registering_stores_the_token_too(self, config):
+        # AUDIT SF-09: the token, not the device id, is the credential from
+        # here on. Losing it on the way to config would silently leave every
+        # later request unauthenticated.
+        transport = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
+        syncclient.register_device(config, "my-pc", transport=transport)
+        assert config.get("device_token") == "secret-tok"
+
     def test_an_email_is_only_sent_when_typed(self, config):
-        transport = FakeTransport({syncclient.ENDPOINT_REGISTER: {"id": "abc123"}})
+        transport = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
         syncclient.register_device(config, "my-pc", transport=transport)
         assert "e" not in transport.payload_for(syncclient.ENDPOINT_REGISTER)
 
-    @pytest.mark.parametrize("response", [None, {}, {"id": ""}, "not-json"])
+    def test_a_platform_is_only_sent_when_given(self, config):
+        without = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
+        syncclient.register_device(config, "my-pc", transport=without)
+        assert "p" not in without.payload_for(syncclient.ENDPOINT_REGISTER)
+
+        with_platform = FakeTransport({
+            syncclient.ENDPOINT_REGISTER: {"id": "abc123", "tok": "secret-tok"},
+        })
+        syncclient.register_device(config, "my-pc", platform="Windows",
+                                   transport=with_platform)
+        assert with_platform.payload_for(syncclient.ENDPOINT_REGISTER)["p"] == "Windows"
+
+    @pytest.mark.parametrize("response", [
+        None, {}, "not-json",
+        {"id": ""},                        # no id at all
+        {"id": "abc123"},                  # id but no token — see below
+    ])
     def test_a_failed_registration_leaves_sync_off(self, config, response):
+        # A response with an id but no token is a failure too, not a partial
+        # success: continuing without a token would silently fall back to the
+        # unauthenticated behaviour this exists to close.
         transport = FakeTransport({syncclient.ENDPOINT_REGISTER: response})
         assert syncclient.register_device(config, "my-pc", transport=transport) == ""
         assert config.get("device_id") == ""
+        assert config.get("device_token") == ""
 
 
 class TestNothingUndisclosedLeavesTheMachine:
@@ -558,6 +793,72 @@ class TestTheTransportRefusesPlainHttp:
 
     def test_an_empty_url_sends_nothing(self):
         assert syncclient.Transport("").post("/upload", {"d": "x"}) is None
+
+
+class TestTheTransportSendsTheBearerToken:
+    """
+    One layer below TestAuthentication: this is the header actually landing
+    on the wire, not just the client handing a token to its transport.
+    """
+
+    class _FakeResponse:
+        def __init__(self, body: bytes):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, _n):
+            return self._body
+
+    def test_a_token_becomes_an_authorization_header(self, monkeypatch):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return self._FakeResponse(b"{}")
+
+        monkeypatch.setattr(syncclient.urllib.request, "urlopen", fake_urlopen)
+
+        transport = syncclient.Transport("https://example.com", token="secret-tok")
+        transport.post("/sync", {"d": "x"})
+
+        assert captured["request"].get_header("Authorization") == "Bearer secret-tok"
+
+    def test_no_token_means_no_authorization_header(self, monkeypatch):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return self._FakeResponse(b"{}")
+
+        monkeypatch.setattr(syncclient.urllib.request, "urlopen", fake_urlopen)
+
+        transport = syncclient.Transport("https://example.com")
+        transport.post("/sync", {"d": "x"})
+
+        assert captured["request"].get_header("Authorization") is None
+
+    def test_the_token_can_be_set_after_construction(self, monkeypatch):
+        # SyncClient reuses one Transport for its whole life and arms the
+        # token onto it fresh before each cycle rather than rebuilding it —
+        # this is the attribute that makes that possible.
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["request"] = request
+            return self._FakeResponse(b"{}")
+
+        monkeypatch.setattr(syncclient.urllib.request, "urlopen", fake_urlopen)
+
+        transport = syncclient.Transport("https://example.com")
+        transport.token = "armed-later"
+        transport.post("/sync", {"d": "x"})
+
+        assert captured["request"].get_header("Authorization") == "Bearer armed-later"
 
 
 # ── The monitor's side ────────────────────────────────────────────────────

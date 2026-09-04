@@ -215,7 +215,7 @@ def build_upload(device_id: str, totals: dict, now=None) -> dict:
     }
 
 
-def build_app_sync(device_id: str, apps) -> dict:
+def build_app_sync(device_id: str, apps, overrides: dict = None) -> dict:
     """
     The app-list request that gets local database ids mapped to server ids.
 
@@ -223,17 +223,26 @@ def build_app_sync(device_id: str, apps) -> dict:
     goes on the wire rather than the display name, because the server's job is
     to put the same product from two devices in one row and it cannot do that
     if one device says "<Product>.exe" and the other says "com.<product>".
+
+    `overrides` is {local_id: key}, already-normalised keys a user typed by
+    hand (core/syncclient.py's set_manual_key — see STATUS.md: this function
+    cannot always guess right, and the fix for when it does not is letting
+    someone say so, not a cleverer regex). An override wins over the
+    computed key outright rather than merely being a tie-breaker, which is
+    the whole point of it existing.
     """
     if not device_id:
         return {}
 
+    overrides = overrides or {}
     entries = []
     for app in apps or ():
         try:
             local_id = int(app.get("id", 0))
         except (TypeError, ValueError):
             continue
-        key = canonical_app_key(app.get("name", "") or app.get("exe_name", ""))
+        override_key = str(overrides.get(local_id) or overrides.get(str(local_id)) or "").strip()
+        key = override_key or canonical_app_key(app.get("name", "") or app.get("exe_name", ""))
         if local_id <= 0 or not key:
             continue
         entries.append([local_id, key, str(app.get("category", "") or "")])

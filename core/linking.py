@@ -47,6 +47,14 @@ carefully:
 
 None of that is a substitute for the obvious advice, which the UI gives: do
 not photograph it, and do not put it in a screen share.
+
+## Every request here is authenticated (AUDIT SF-09)
+
+`request_link`, `join_link` and `list_group` all go through
+`_device_transport`, which attaches this device's bearer token from
+registration (`core/syncclient.py`, `server/models.py` note 4) rather than
+relying on the device id in the request body to prove anything. `list_group`
+carries no device id at all — the token alone says whose group to list.
 """
 
 import re
@@ -223,6 +231,22 @@ class LinkSession:
         return f"{self.key[:half]} {self.key[half:]}"
 
 
+def _device_transport(config, transport=None):
+    """
+    A Transport carrying this device's bearer token, unless one was supplied.
+
+    Shared by every function below that talks to the server, so the token
+    (AUDIT SF-09 — see server/models.py note 4) is attached the same way
+    everywhere rather than once per call site.
+    """
+    from core import syncclient
+
+    if transport is not None:
+        return transport
+    token = str(config.get("device_token", "") or "").strip()
+    return syncclient.Transport(config.get("server_url", ""), token=token)
+
+
 def request_link(config, transport=None) -> LinkSession:
     """
     Ask the server for a link key and start a session.
@@ -240,8 +264,8 @@ def request_link(config, transport=None) -> LinkSession:
             "Register this device for sync before linking another one."
         )
 
-    transport = transport or syncclient.Transport(config.get("server_url", ""))
-    response = transport.post("/link/new", {"d": device_id})
+    transport = _device_transport(config, transport)
+    response = transport.post(syncclient.ENDPOINT_LINK_NEW, {"d": device_id})
     if not isinstance(response, dict):
         raise LinkError("Could not reach the sync server. Check your connection.")
 
@@ -270,8 +294,8 @@ def join_link(config, key: str, transport=None) -> str:
             "Register this device for sync before joining another device."
         )
 
-    transport = transport or syncclient.Transport(config.get("server_url", ""))
-    response = transport.post("/link/join", {"d": device_id, "k": key})
+    transport = _device_transport(config, transport)
+    response = transport.post(syncclient.ENDPOINT_LINK_JOIN, {"d": device_id, "k": key})
     if not isinstance(response, dict):
         raise LinkError("Could not reach the sync server. Check your connection.")
 
@@ -284,3 +308,67 @@ def join_link(config, key: str, transport=None) -> str:
 
     log.info("Device joined a sync group.")
     return group
+
+
+# ── Listing the group (Devices tab) ─────────────────────────────────────────
+
+# A hostile or badly broken server returning thousands of rows must not turn
+# into thousands of Tk widgets. The real limit — device_id, max_dev in
+# ui/devices_page.py — is 2 or 10; this is a sanity backstop, not a plan
+# limit, so it sits well above either.
+MAX_GROUP_DEVICES = 50
+
+
+def parse_group(payload) -> list:
+    """
+    The device list from a /group response — server/models.py's GroupResp.
+
+    Same posture as syncproto.parse_sync: this came off the network, so a
+    malformed entry is skipped rather than raising, and one bad row must not
+    cost the list for every other device in the group.
+    """
+    if not isinstance(payload, dict):
+        return []
+
+    raw = payload.get("devices")
+    if not isinstance(raw, list):
+        return []
+
+    devices = []
+    for entry in raw[:MAX_GROUP_DEVICES]:
+        if not isinstance(entry, dict):
+            continue
+        device_id = str(entry.get("id", "") or "").strip()
+        if not device_id:
+            continue
+        devices.append({
+            "id": device_id,
+            "name": str(entry.get("name") or "").strip(),
+            "platform": str(entry.get("platform") or "").strip(),
+            "seen": entry.get("seen"),
+            "isOwn": bool(entry.get("isOwn", False)),
+        })
+    return devices
+
+
+def list_group(config, transport=None) -> list:
+    """
+    Every device sharing this one's sync group, including this one.
+
+    No device id travels in this request at all — not in a path, not in a
+    body (AUDIT SF-09): the bearer token alone says whose group to list, and
+    a request with no valid token has nothing to list regardless of what `d`
+    might have claimed. Raises LinkError on any failure, same as
+    request_link and join_link, so a caller has one exception type to catch.
+    """
+    from core import syncclient
+
+    if not str(config.get("device_id", "") or "").strip():
+        raise LinkError("Register this device for sync before listing devices.")
+
+    transport = _device_transport(config, transport)
+    response = transport.post(syncclient.ENDPOINT_GROUP, {})
+    if not isinstance(response, dict):
+        raise LinkError("Could not reach the sync server. Check your connection.")
+
+    return parse_group(response)

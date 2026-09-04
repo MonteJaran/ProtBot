@@ -34,6 +34,24 @@ building one.
 device's own last upload. Clients subtract their own contribution before
 merging; see syncproto.merge_app_total for why that is not the same as taking
 the larger of the two numbers.
+
+  4. **`id` names a device; `tok` authenticates the request.** AUDIT SF-09:
+     an earlier draft of this protocol used `device_id` alone as the
+     credential on every request, and it travels in request bodies (and, in
+     one client that predated this file, a URL path) where it lands in
+     server and proxy logs — anyone who obtains one can read and pollute
+     that device's data. `RegisterResp.tok` is a second, higher-entropy
+     secret returned once, at registration, and never again. Every request
+     after that MUST carry it as `Authorization: Bearer <tok>` and the
+     server MUST reject (401) a request whose token does not match the `d`
+     it claims — a bare device id in a body or path is no longer sufficient
+     on its own. `/link/new` and `/link/join` need it too, and the audit's
+     other half of this finding — rate-limiting the link-code endpoint —
+     is still open; nothing in the client can substitute for that.
+     Both clients (`core/syncclient.py`, `android/app/.../SyncClient.kt`)
+     send this header on every authenticated request once they hold a
+     token; this file records the contract they were built against; the
+     server that checks it does not exist yet — see STATUS.md.
 """
 
 from pydantic import BaseModel
@@ -44,9 +62,11 @@ from pydantic import BaseModel
 class RegisterReq(BaseModel):
     e: str | None = None   # email — discarded immediately after response
     n: str | None = None   # device label, shown only in the user's device list
+    p: str | None = None   # platform ("Windows", "Android"), for the device list's icon
 
 class RegisterResp(BaseModel):
     id: str                   # 24-char device_id
+    tok: str                  # secret bearer token — returned once, store it, never send it back
 
 
 # ── App list sync (sent once, or when tracked apps change) ────────────────────
@@ -69,13 +89,25 @@ class AppSyncResp(BaseModel):
 class UploadReq(BaseModel):
     d: str                    # device_id
     t: int                    # period end — unix timestamp (int, not ISO string)
+    z: str                    # the client's own local date (note 2) — the
+                               # field this class was missing until the server
+                               # implementation was written against
+                               # core/syncproto.py's actual build_upload(),
+                               # which has always sent it. Stored verbatim.
     a: list[list]             # [[server_app_id, seconds], ...]  only s>0
 
 class UploadResp(BaseModel):
     ok: int = 1
 
 
-# ── Cross-device sync response ────────────────────────────────────────────────
+# ── Cross-device sync ──────────────────────────────────────────────────────────
+# POST body is just the device id — core/syncclient.py's _sync_once() sends
+# {"d": self.device_id} and nothing else. No date travels with this request;
+# the group total is built from each device's own most recently *uploaded*
+# date, not a date supplied here — see server/db.py's group_totals().
+
+class SyncReq(BaseModel):
+    d: str                    # device_id
 
 class SyncResp(BaseModel):
     apps: dict                # {server_app_id: total_sec_today}
@@ -83,6 +115,15 @@ class SyncResp(BaseModel):
 
 
 # ── Device linking ────────────────────────────────────────────────────────────
+#
+# /link/new and /link/join both require the Authorization header like every
+# other endpoint below this point — the `d` field they carry is which device
+# the request is about, not proof of who is asking. See note 4 above. The
+# audit's fix also calls for rate-limiting /link/new and /link/join: an
+# 8-character key is guessable in bulk without one, however short its life.
+
+class LinkNewReq(BaseModel):
+    d: str                    # the host device_id the new key's group is for
 
 class LinkNewResp(BaseModel):
     k: str                    # 8-char key, valid 5 minutes
@@ -96,7 +137,49 @@ class LinkJoinResp(BaseModel):
     grp: str                  # shared group id
 
 
+# ── Group device list (Devices tab) ───────────────────────────────────────────
+#
+# GET /group, Authorization header only — no device id in the request at all,
+# path or body. The token alone says which group to list, which is the point:
+# nothing here is a wider fix for the same class of bug SF-09 names elsewhere.
+
+class GroupDevice(BaseModel):
+    id: str
+    name: str | None = None
+    platform: str | None = None       # "Windows" / "Android", for the icon
+    seen: int | None = None           # unix timestamp, last successful /sync
+    isOwn: bool = False
+
+class GroupResp(BaseModel):
+    devices: list[GroupDevice]
+
+
+# ── Licence verification (STATUS.md item 10) ────────────────────────────────
+#
+# core/licensing.py's verify_with_server() sends this and reads this back
+# already — it was written and tested against this exact shape before a
+# server existed to answer it. Unauthenticated on purpose: activating a
+# licence is how a fresh install without a device_id yet proves anything at
+# all, and the key itself is the credential being checked.
+
+class LicenseVerifyReq(BaseModel):
+    k: str                    # licence key
+    d: str = ""                # device_id, for binding/telemetry — optional,
+                               # core/licensing.py sends it whenever a device
+                               # is registered but activation does not require one
+
+class LicenseVerifyResp(BaseModel):
+    plan: str                 # "free" or "premium"
+    expires_at: float = 0     # unix timestamp; 0 means no expiry recorded
+
+
 # ── Global anonymous stats ────────────────────────────────────────────────────
+#
+# Not called by any client yet — core/syncclient.py and core/licensing.py
+# define every endpoint they actually use, and neither of them requests
+# this. Kept as a model because a caller may exist later; server/app.py does
+# not implement an endpoint for it, so there is nothing here to drift out of
+# sync with in the meantime.
 
 class GlobalStatsResp(BaseModel):
     # {category: {sec_today, users_today}}

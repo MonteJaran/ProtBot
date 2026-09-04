@@ -1,3 +1,14 @@
+[build-system]
+# setuptools, not because this ships to PyPI (it does not — see the licence
+# below), but so `pip install -e .` makes core/ and ui/ real importable
+# packages. AUDIT ST-04: before this, main.py reached them with
+# sys.path.insert, which only worked because main.py happens to sit at the
+# repo root beside them — a script one directory deeper (as several under
+# packaging/ are) needs its own, and keeps it; that is a different, correct
+# use of the same trick, not the one this fixes.
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "protbot"
 version = "1.0.0"   # keep in sync with core/version.py (a test enforces this)
@@ -9,7 +20,10 @@ requires-python = ">=3.10"
 license = "LicenseRef-Proprietary"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 classifiers = [
-    "License :: Other/Proprietary License",
+    # No "License ::" classifier alongside it: PEP 639 says the license
+    # expression above replaces those, and current setuptools enforces it —
+    # `pip install -e .` refused to build with both present, caught by
+    # actually running it rather than assumed. See AUDIT ST-04, STATUS.md.
     "Environment :: Win32 (MS Windows)",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
@@ -18,7 +32,22 @@ classifiers = [
 dependencies = [
     "psutil>=5.9.0",
     "plyer>=2.1.0",
+    # .xlsx export (ROADMAP.md item 5). MIT, pure Python, no lxml/Pillow
+    # extras pulled in — checked against the packaging decision in AUDIT
+    # BL-05 before adding, the same way pystray/Pillow were dropped for it.
+    "openpyxl>=3.1.0",
 ]
+
+[project.scripts]
+protbot = "main:main"
+
+[tool.setuptools]
+# The importable surface, and no more: not tests/, android/, packaging/ or
+# server/ (server/ is the separate Cloud Functions deployment — see
+# STATUS.md — and is never imported by this app; core/dataexport.py etc.
+# never touch it).
+py-modules = ["main"]
+packages = ["core", "ui"]
 
 [project.optional-dependencies]
 dev = [

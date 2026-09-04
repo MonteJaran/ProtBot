@@ -261,6 +261,79 @@ def test_signing_is_timestamped():
     assert "/fd SHA256" in build
 
 
+# ── An installable package, not sys.path.insert (AUDIT ST-04) ─────────────────
+#
+# Text checks on pyproject.toml, not a TOML parse: tomllib is 3.11+ only and
+# this project's floor is 3.10 (requires-python below), and the rest of this
+# file already reads packaging config as text (see test_spec_references_
+# files_that_exist above) rather than pull in a parser for one section.
+
+def _pyproject_text() -> str:
+    return read(REPO_ROOT / "pyproject.toml")
+
+
+def test_there_is_a_build_backend():
+    text = _pyproject_text()
+    assert 'requires = ["setuptools' in text
+    assert 'build-backend = "setuptools.build_meta"' in text
+
+
+def test_the_entry_point_is_main():
+    assert re.search(r'protbot\s*=\s*"main:main"', _pyproject_text())
+
+
+def test_setuptools_packages_are_real_and_do_not_overreach():
+    # Exactly core/ and ui/, plus the main module — not tests/, android/,
+    # packaging/, or server/ (server/ is the separate Cloud Functions
+    # deployment; see STATUS.md — nothing in core/ or ui/ imports it).
+    text = _pyproject_text()
+
+    packages_match = re.search(r'^packages\s*=\s*\[([^\]]*)\]', text, re.MULTILINE)
+    assert packages_match, "no packages = [...] in pyproject.toml"
+    packages = re.findall(r'"([^"]+)"', packages_match.group(1))
+    assert set(packages) == {"core", "ui"}
+    for package in packages:
+        pkg_dir = REPO_ROOT / package
+        assert pkg_dir.is_dir(), f"{package} does not exist"
+        assert (pkg_dir / "__init__.py").is_file(), f"{package} has no __init__.py"
+
+    modules_match = re.search(r'py-modules\s*=\s*\[([^\]]*)\]', text)
+    assert modules_match, "no py-modules = [...] in pyproject.toml"
+    py_modules = re.findall(r'"([^"]+)"', modules_match.group(1))
+    assert py_modules == ["main"]
+    for module in py_modules:
+        assert (REPO_ROOT / f"{module}.py").is_file(), f"{module}.py does not exist"
+
+
+def _uncommented(text: str) -> str:
+    """Strip whole-line '#' comments, so a check for absence of some text
+    is not fooled by that same text appearing in a comment explaining why
+    it is absent — as this file's own comments do, deliberately."""
+    return "\n".join(line for line in text.splitlines()
+                     if not line.strip().startswith("#"))
+
+
+def test_no_license_classifier_alongside_the_license_expression():
+    # setuptools refuses to build with both present (PEP 639) — this
+    # combination is what pip install -e . actually failed on before it was
+    # caught, not a theoretical concern. See AUDIT ST-04, STATUS.md.
+    text = _pyproject_text()
+    assert 'license = "LicenseRef-Proprietary"' in text
+    assert "License ::" not in _uncommented(text)
+
+
+def test_main_has_no_sys_path_hack():
+    main_source = read(REPO_ROOT / "main.py")
+    assert "sys.path.insert" not in main_source
+    assert "sys.path.append" not in main_source
+
+
+def test_build_script_has_no_sys_path_hack_either():
+    # It had its own copy of the same trick, for the same reason — reading
+    # core/version.py before a proper install exists to rely on instead.
+    assert "sys.path" not in _uncommented(read(BUILD_PS1))
+
+
 # ── Documentation ─────────────────────────────────────────────────────────────
 
 def test_build_docs_exist_and_flag_the_untested_parts():

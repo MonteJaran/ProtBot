@@ -11,19 +11,12 @@ from tkinter import messagebox, ttk
 from core import schedule
 from core.logging_setup import get_logger
 from core.version import __version__
+from ui import a11y
+# See ui/theme.py's docstring: the canonical definitions, and the
+# high-contrast alternative (AUDIT ST-06), live there.
+from ui.theme import BG, BG2, ACCENT, TEXT, TEXT2, WARNING, ERROR
 
 log = get_logger("ui.settings")
-
-# ── Color Scheme ─────────────────────────────────────────────────────────────
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
 
 _APP_VERSION = __version__   # single source of truth: core/version.py
 
@@ -67,10 +60,26 @@ class SettingsPage(ttk.Frame):
 
         canvas.bind_all('<MouseWheel>', _on_mousewheel)
 
+        # Keyboard scroll (AUDIT ST-06) — this canvas had none at all before:
+        # no key bindings, and Tk does not make a Canvas tab-focusable by
+        # default, so a keyboard-only user could not scroll this tab past
+        # whatever fit on screen. Click-to-focus plus a11y.focus_scrollable
+        # for Tab, matching devices_page.py's identical scroll pattern.
+        a11y.focus_scrollable(canvas, self.config)
+        canvas.bind('<Button-1>', lambda e: canvas.focus_set())
+        canvas.bind('<Up>',    lambda e: canvas.yview_scroll(-1, 'units'))
+        canvas.bind('<Down>',  lambda e: canvas.yview_scroll(1, 'units'))
+        canvas.bind('<Prior>', lambda e: canvas.yview_scroll(-5, 'units'))  # Page Up
+        canvas.bind('<Next>',  lambda e: canvas.yview_scroll(5, 'units'))   # Page Down
+        canvas.bind('<Home>',  lambda e: canvas.yview_moveto(0))
+        canvas.bind('<End>',   lambda e: canvas.yview_moveto(1))
+
         self._inner = inner
 
         # ── Sections ──────────────────────────────────────────────────────────
         self._build_monitoring_section(inner)
+        self._separator(inner)
+        self._build_display_section(inner)
         self._separator(inner)
         self._build_notifications_section(inner)
         self._separator(inner)
@@ -295,6 +304,32 @@ class SettingsPage(ttk.Frame):
                 "if you have already used up your limit for the day."
             ),
             bg=BG, fg=TEXT2, font=('Segoe UI', 9), justify='left',
+        ).pack(anchor='w', padx=48, pady=(0, 8))
+
+    # ── Section: Display ─────────────────────────────────────────────────────
+
+    def _build_display_section(self, parent) -> None:
+        # AUDIT ST-06. A restart-required setting: ui/theme.py bakes a
+        # colour into each widget at the moment it is built, and there is no
+        # general "re-theme everything on screen" operation in Tk short of
+        # tearing the window down — so this says so, rather than promising a
+        # live switch it does not do.
+        self._section_header(parent, "Display")
+
+        self._high_contrast_var = tk.BooleanVar(
+            value=self.config.get("high_contrast", False))
+        ttk.Checkbutton(
+            parent,
+            text="High-contrast colours",
+            variable=self._high_contrast_var,
+            command=lambda: self.config.set(
+                "high_contrast", self._high_contrast_var.get()),
+        ).pack(anchor='w', padx=32, pady=(0, 4))
+
+        tk.Label(
+            parent,
+            text="Takes effect the next time ProtBot starts.",
+            bg=BG, fg=TEXT2, font=('Segoe UI', 9),
         ).pack(anchor='w', padx=48, pady=(0, 8))
 
     # ── Section: Startup ──────────────────────────────────────────────────────
@@ -594,6 +629,7 @@ class SettingsPage(ttk.Frame):
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
+        a11y.bind_escape_closes(dialog)   # cancels — never confirms a deletion
 
         tk.Label(dialog,
                  text="This permanently deletes your usage history, your tracked\n"

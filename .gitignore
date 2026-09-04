@@ -9,6 +9,8 @@ __pycache__/
 
 # Local data & secrets
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.log
 .env
@@ -23,6 +25,8 @@ build/
 dist/
 # Generated from core/version.py by packaging/make_version_info.py
 packaging/version_info.txt
+# pip install -e . (pyproject.toml's build-system, AUDIT ST-04)
+*.egg-info/
 
 # Test & tooling caches
 .pytest_cache/

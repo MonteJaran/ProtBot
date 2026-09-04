@@ -137,6 +137,25 @@ def test_planned_features_are_not_also_sold():
         )
 
 
+def test_shipped_features_are_not_also_teased_as_planned():
+    """
+    Regression guard, one entry per feature that used to be in
+    _PLANNED_FEATURES (or a combined entry there) and has since shipped for
+    free: leaving the old wording behind would silently contradict
+    _FREE_FEATURES — exactly the insights_page.py teaser bug this session
+    already hit once. See ROADMAP.md item 3 (pattern recognition, all three
+    pieces) and item 5 (Excel and PDF export, both halves).
+    """
+    _free, _premium, planned = _plan_lists()
+    planned_lower = [f.lower() for f in planned]
+    shipped_substrings = ["excel", "pdf", "pattern recognition"]
+    for shipped in shipped_substrings:
+        assert not any(shipped in f for f in planned_lower), (
+            f"{shipped!r} ships for free now but _PLANNED_FEATURES still "
+            "teases it as unavailable."
+        )
+
+
 # Features that were advertised while no code implemented them. Each may only
 # move into the sold lists once it genuinely works end to end.
 UNIMPLEMENTED_CLAIMS = [
@@ -168,3 +187,57 @@ def test_retention_is_not_advertised_until_it_is_implemented():
         "No retention logic exists in the codebase (AUDIT SF-11), so no plan "
         "may advertise a retention window."
     )
+
+
+# ── The Insights "Planned" teasers must not tease what already shipped ────────
+#
+# The mirror image of BL-02: not an invented finding, but an invented
+# *absence* of one. ui/insights_page.py's _draw_premium docstring makes the
+# same point about the other direction (never show a made-up statistic as a
+# real finding) — this is what enforces it, since that module cannot be
+# imported here (no display; see CLAUDE.md) the way _plan_lists above imports
+# nothing and just parses the source.
+
+def _insights_teaser_titles():
+    tree = _module(os.path.join(REPO_ROOT, "ui", "insights_page.py"))
+    for node in ast.walk(tree):
+        is_teasers = (isinstance(node, ast.Assign)
+                     and any(isinstance(t, ast.Name) and t.id == "teasers"
+                            for t in node.targets))
+        if not is_teasers:
+            continue
+        return [
+            value.value
+            for dict_node in node.value.elts
+            for key, value in zip(dict_node.keys, dict_node.values, strict=True)
+            if isinstance(key, ast.Constant) and key.value == "title"
+            and isinstance(value, ast.Constant)
+        ]
+    raise AssertionError("no `teasers = [...]` assignment found in insights_page.py")
+
+
+def test_insights_teasers_list_is_well_formed():
+    # An empty list is legitimate — ROADMAP.md item 3 ("pattern recognition")
+    # is fully shipped, so there is currently nothing left for this page to
+    # preview (see _draw_premium's early return). This only checks the list
+    # parses as the shape the other tests below expect, not that it is
+    # non-empty — see test_insights_does_not_tease_a_section_it_already_ships
+    # for the actual regression guard.
+    assert isinstance(_insights_teaser_titles(), list)
+
+
+def test_insights_does_not_tease_a_section_it_already_ships():
+    # Every insight that has, at some point, been teased here and later
+    # shipped for free (ROADMAP.md item 3, now complete) — nothing in the
+    # teaser list may still claim any of these is only planned.
+    shipped_substrings = [
+        "week-over-week", "week over week",
+        "distraction trigger",
+        "day-of-week", "day of week",
+    ]
+    titles = [t.lower() for t in _insights_teaser_titles()]
+    for shipped in shipped_substrings:
+        assert not any(shipped in t for t in titles), (
+            f"insights_page.py still teases {shipped!r} as 'Planned', but "
+            "ROADMAP.md item 3 has shipped it for free. Remove the teaser."
+        )

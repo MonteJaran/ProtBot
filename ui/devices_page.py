@@ -8,7 +8,6 @@ Sections
 3. Your Plan     — freemium vs premium feature comparison + upgrade CTA
 """
 
-import json
 import threading
 import tkinter as tk
 import webbrowser
@@ -16,25 +15,17 @@ from tkinter import messagebox, ttk
 
 from core import licensing
 from core.logging_setup import get_logger
+from ui import a11y
+# The nine core colours (and the high-contrast alternative) live in
+# ui/theme.py; TEXT3/GOLD/PURPLE are this page's own — see that module's
+# docstring for why. theme.apply_to_modules() re-points the imported names
+# in place before this page is ever built (ui/app.py, MainApp.__init__).
+from ui.theme import BG, BG2, BG3, ACCENT, TEXT, TEXT2, SUCCESS, WARNING, ERROR
 
 log = get_logger("devices")
 
-try:
-    from urllib.request import urlopen, Request
-except ImportError:
-    urlopen = None
-
 # ── Colour palette (matches app.py) ──────────────────────────────────────────
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
 TEXT3   = '#6a6a7a'   # dimmed — used for not-yet-built ("planned") features
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
 GOLD    = '#fbbf24'
 PURPLE  = '#a78bfa'
 
@@ -57,6 +48,9 @@ _FREE_FEATURES = [
     "Automatic app closing when over limit",
     "Usage insights: peak hours, categories, top apps",
     "CSV export",
+    "Excel (.xlsx) export",
+    "PDF report export",
+    "Pattern recognition across your history",
     "All data stored locally on your PC",
     "Automatic cleanup of old history",
     "Scheduled focus hours",
@@ -71,30 +65,9 @@ _PREMIUM_FEATURES: list = []
 # it works end to end in the shipped build.
 _PLANNED_FEATURES = [
     "Cross-device sync",
-    "Pattern recognition across your history",
     "Predictive distraction alerts",
-    "PDF / Excel report export",
-    "Team challenges & leaderboards",
     "Priority support",
 ]
-
-
-def _api(config, method: str, path: str, body: dict = None):
-    """
-    Minimal synchronous API call to the Firebase Cloud Functions endpoint.
-    Returns (status_code, response_dict) or raises URLError / HTTPError.
-    """
-    base = (config.get("server_url") or "").rstrip("/")
-    if not base:
-        raise ValueError("Server URL not configured — go to Settings.")
-
-    url  = f"{base}/{path.lstrip('/')}"
-    data = json.dumps(body).encode() if body else None
-    headers = {"Content-Type": "application/json"}
-
-    req  = Request(url, data=data, headers=headers, method=method)
-    with urlopen(req, timeout=10) as resp:
-        return resp.status, json.loads(resp.read().decode())
 
 
 class DevicesPage(ttk.Frame):
@@ -141,7 +114,11 @@ class DevicesPage(ttk.Frame):
         self._inner.bind_all('<MouseWheel>',
             lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units'))
 
-        # Keyboard scroll — focus canvas on click so keys are captured
+        # Keyboard scroll. Tab reaches the canvas too, not just a click — a
+        # Canvas is not focusable by default in Tk (AUDIT ST-06); see
+        # ui/a11y.py's focus_scrollable for why that needed an explicit fix
+        # rather than being something Tab traversal already handled.
+        a11y.focus_scrollable(canvas, self.config)
         canvas.bind('<Button-1>', lambda e: canvas.focus_set())
         canvas.bind('<Up>',       lambda e: canvas.yview_scroll(-1, 'units'))
         canvas.bind('<Down>',     lambda e: canvas.yview_scroll( 1, 'units'))
@@ -316,7 +293,16 @@ class DevicesPage(ttk.Frame):
                   relief='flat', bd=0, padx=12, pady=6,
                   activebackground=ACCENT, activeforeground='#fff',
                   cursor='hand2',
-                  command=self._show_join_dialog).pack(side='left')
+                  command=self._show_join_dialog).pack(side='left', padx=(8, 0))
+
+        tk.Button(btn_row,
+                  text="Match Apps…",
+                  bg=BG3, fg=TEXT,
+                  font=('Segoe UI', 9),
+                  relief='flat', bd=0, padx=12, pady=6,
+                  activebackground=ACCENT, activeforeground='#fff',
+                  cursor='hand2',
+                  command=self._show_match_apps_dialog).pack(side='left', padx=(8, 0))
 
         if at_limit and not licensing.is_premium(self.config):
             tk.Label(card,
@@ -457,22 +443,22 @@ class DevicesPage(ttk.Frame):
         self._reg_timeout_id = self.after(12000, _timeout)
 
         def _do():
-            try:
-                import socket
-                hostname = socket.gethostname() or "Windows PC"
-                body = {"n": hostname, "p": "Windows"}
-                if email:
-                    body["e"] = email
-                _, resp = _api(self.config, "POST", "/r", body)
-                dev_id = resp.get("id", "")
-                if not dev_id:
-                    raise ValueError("No ID returned from server.")
-                self.config.set("device_id", dev_id)
+            import socket
+
+            from core import syncclient
+
+            hostname = socket.gethostname() or "Windows PC"
+            # The same registration this device's sync client would perform
+            # itself, rather than a second implementation of it — id *and*
+            # bearer token (AUDIT SF-09) both land in config from one call.
+            dev_id = syncclient.register_device(
+                self.config, device_name=hostname, email=email,
+                platform="Windows")
+            if dev_id:
                 self.after(0, lambda: self._reg_done(dev_id))
-            except Exception as exc:
-                # Bind the value into the lambda: `exc` is deleted when the
-                # except block exits, but this runs later on the Tk thread.
-                self.after(0, lambda e=exc: self._reg_error(str(e)))
+            else:
+                self.after(0, lambda: self._reg_error(
+                    "Could not reach the server, or it refused the request."))
 
         threading.Thread(target=_do, daemon=True).start()
 
@@ -506,11 +492,12 @@ class DevicesPage(ttk.Frame):
             return
 
         def _do():
+            from core import linking
+
             try:
-                _, resp = _api(self.config, "POST", "/link/new", {"d": dev_id})
-                key = resp.get("k", "")
-                self.after(0, lambda: self._show_link_key(key))
-            except Exception as exc:
+                session = linking.request_link(self.config)
+                self.after(0, lambda: self._show_link_key(session))
+            except linking.LinkError as exc:
                 self.after(0, lambda e=exc: messagebox.showerror(
                     "Error", str(e), parent=self))
 
@@ -524,26 +511,20 @@ class DevicesPage(ttk.Frame):
     QR_MODULE_PX = 7
     QR_QUIET_MODULES = 4
 
-    def _show_link_key(self, key: str):
+    def _show_link_key(self, session):
         """
         The link code, as a QR to scan and as characters to type.
 
         Both, always. The QR is the fast path, and a camera that will not focus
         is a bad reason to be unable to link a device — so the characters stay
         on screen next to it rather than behind a "having trouble?" link.
-        """
-        from core import linking
 
+        Takes an already-built linking.LinkSession: request_link() either
+        returns one it has already validated, or raises before this is ever
+        called, so there is nothing left here to fail on.
+        """
         if self._link_countdown[0]:
             self.after_cancel(self._link_countdown[0])
-
-        try:
-            session = linking.LinkSession(key)
-        except linking.LinkError as exc:
-            # A code that cannot be encoded must not be drawn: the user would
-            # scan it, and it would fail on the phone instead of here.
-            messagebox.showerror("Link failed", str(exc), parent=self)
-            return
 
         if hasattr(self, '_key_popup') and self._key_popup.winfo_exists():
             self._key_popup.destroy()
@@ -553,6 +534,7 @@ class DevicesPage(ttk.Frame):
         popup.configure(bg=BG)
         popup.transient(self)
         popup.resizable(False, False)
+        a11y.bind_escape_closes(popup)
         self._key_popup = popup
 
         tk.Label(popup, text="Scan this with ProtBot on your phone",
@@ -659,6 +641,7 @@ class DevicesPage(ttk.Frame):
         dialog.transient(self)
         dialog.resizable(False, False)
         dialog.grab_set()
+        a11y.bind_escape_closes(dialog)
 
         tk.Label(dialog, text="Enter the 8-character code from the other device:",
                  bg=BG, fg=TEXT2, font=('Segoe UI', 9),
@@ -682,12 +665,12 @@ class DevicesPage(ttk.Frame):
             status_lbl.config(text="Joining...", fg=TEXT2)
 
             def _do():
+                from core import linking
+
                 try:
-                    _, resp = _api(self.config, "POST", "/link/join",
-                                   {"d": dev_id, "k": code})
-                    grp = resp.get("grp", "")
+                    grp = linking.join_link(self.config, code)
                     self.after(0, lambda: self._join_done(dialog, grp))
-                except Exception as exc:
+                except linking.LinkError as exc:
                     self.after(0, lambda e=exc: status_lbl.config(
                         text=f"Error: {e}", fg=ERROR))
 
@@ -706,6 +689,131 @@ class DevicesPage(ttk.Frame):
         # Fetch live group device list from server so the other device shows up
         self._refresh_group_devices()
 
+    # ── Matching apps across devices by hand ────────────────────────────────
+    #
+    # syncproto.canonical_app_key is a best-effort guess and says so: a
+    # package named after its vendor rather than its product — Firefox.exe
+    # meeting org.mozilla.firefox — is a case no string rule resolves
+    # without a brand list. This dialog is the fallback: type the same key
+    # on both devices and they join, the same as if the guess had matched.
+    # See STATUS.md and core/syncclient.py's set_manual_key.
+
+    def _show_match_apps_dialog(self):
+        from core import syncproto
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Match Apps Across Devices")
+        dialog.geometry("520x460")
+        dialog.configure(bg=BG)
+        dialog.transient(self)
+        dialog.resizable(False, True)
+        a11y.bind_escape_closes(dialog)
+
+        tk.Label(
+            dialog,
+            text="ProtBot guesses which app here is the same as one on another\n"
+                 "device by its name. When that guess is wrong, give the app the\n"
+                 "same sync key here and on the other device to join them by hand.",
+            bg=BG, fg=TEXT2, font=('Segoe UI', 9), justify='left',
+            wraplength=480,
+        ).pack(anchor='w', padx=16, pady=(14, 10))
+
+        # Scrollable list — the app count is unbounded, unlike everything
+        # else in this dialog.
+        outer = tk.Frame(dialog, bg=BG)
+        outer.pack(fill='both', expand=True, padx=16)
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
+        sb = ttk.Scrollbar(outer, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+        a11y.focus_scrollable(canvas, self.config)
+        canvas.bind('<Button-1>', lambda e: canvas.focus_set())
+        canvas.bind('<Up>',   lambda e: canvas.yview_scroll(-1, 'units'))
+        canvas.bind('<Down>', lambda e: canvas.yview_scroll(1, 'units'))
+
+        inner = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=inner, anchor='nw')
+        inner.bind('<Configure>',
+            lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>',
+            lambda e: canvas.itemconfig(win_id, width=e.width))
+
+        try:
+            apps = self.db.get_all_tracked_apps() or []
+        except Exception as exc:
+            log.error("Could not read tracked apps for the match dialog: %s", exc)
+            apps = []
+
+        if not apps:
+            tk.Label(inner, text="No tracked apps yet.",
+                     bg=BG, fg=TEXT2, font=('Segoe UI', 9)).pack(
+                anchor='w', pady=8)
+
+        for app in apps:
+            self._match_app_row(inner, app, syncproto)
+
+        tk.Button(dialog, text="Close", bg=BG3, fg=TEXT,
+                  font=('Segoe UI', 9), relief='flat', bd=0, padx=14, pady=6,
+                  activebackground=ACCENT, activeforeground='#fff',
+                  cursor='hand2', command=dialog.destroy).pack(pady=(6, 14))
+
+    def _match_app_row(self, parent, app, syncproto) -> None:
+        from core import syncclient
+
+        app_id = app.get("id")
+        name = app.get("name", "") or app.get("exe_name", "")
+        auto_key = syncproto.canonical_app_key(name)
+        manual = syncclient.manual_key_for(self.config, app_id)
+
+        row = tk.Frame(parent, bg='#0d1e38')
+        row.pack(fill='x', pady=3)
+
+        tk.Label(row, text=name, bg='#0d1e38', fg=TEXT,
+                 font=('Segoe UI', 9, 'bold'), width=16, anchor='w',
+                 wraplength=110, justify='left').pack(
+            side='left', padx=(10, 6), pady=6)
+
+        key_var = tk.StringVar(value=manual or auto_key)
+        entry = ttk.Entry(row, textvariable=key_var, width=16)
+        entry.pack(side='left', padx=(0, 6))
+
+        status = tk.Label(row, bg='#0d1e38', fg=TEXT2, font=('Segoe UI', 8),
+                          width=8, anchor='w')
+        status.pack(side='left', padx=(0, 6))
+
+        def refresh_status() -> None:
+            current = syncclient.manual_key_for(self.config, app_id)
+            status.config(text="custom" if current else "automatic",
+                         fg=ACCENT if current else TEXT2)
+
+        def save(_event=None) -> None:
+            typed = key_var.get()
+            if syncproto.canonical_app_key(typed) == auto_key:
+                # Typing back the automatic key is the same as not
+                # overriding it — clear rather than store a no-op override,
+                # so "automatic" still reads as automatic afterwards.
+                syncclient.clear_manual_key(self.config, app_id)
+            else:
+                stored = syncclient.set_manual_key(self.config, app_id, typed)
+                key_var.set(stored)
+            refresh_status()
+
+        def reset() -> None:
+            syncclient.clear_manual_key(self.config, app_id)
+            key_var.set(auto_key)
+            refresh_status()
+
+        entry.bind('<Return>', save)
+        entry.bind('<FocusOut>', save)
+
+        tk.Button(row, text="Reset", bg='#0d1e38', fg=TEXT2,
+                  font=('Segoe UI', 8), relief='flat', bd=0, padx=6,
+                  activebackground=BG3, activeforeground=TEXT,
+                  cursor='hand2', command=reset).pack(side='left')
+
+        refresh_status()
+
     def _refresh_group_devices(self):
         """Fetch group member list from server, update config, repopulate UI."""
         dev_id     = self.config.get("device_id") or ""
@@ -715,8 +823,12 @@ class DevicesPage(ttk.Frame):
             return
 
         def _fetch():
+            from core import linking
+
             try:
-                _, data = _api(self.config, "GET", f"/group/{dev_id}")
+                # No device id in this request at all, path or body — see
+                # linking.list_group and AUDIT SF-09.
+                devices = linking.list_group(self.config)
                 others = [
                     {
                         "id":        d["id"],
@@ -724,12 +836,13 @@ class DevicesPage(ttk.Frame):
                         "platform":  d.get("platform") or "Unknown",
                         "last_seen": _fmt_seen(d.get("seen")),
                     }
-                    for d in data.get("devices", [])
+                    for d in devices
                     if not d.get("isOwn", False)
                 ]
                 self.config.set("linked_devices", others)
-                self.after(0, self._populate)
-            except Exception:
+            except linking.LinkError:
+                pass
+            finally:
                 self.after(0, self._populate)
 
         threading.Thread(target=_fetch, daemon=True).start()

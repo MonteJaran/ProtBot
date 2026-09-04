@@ -60,6 +60,12 @@ ENDPOINT_REGISTER = "/register"
 ENDPOINT_APPS = "/apps"
 ENDPOINT_UPLOAD = "/upload"
 ENDPOINT_SYNC = "/sync"
+# Used by core/linking.py, not this module — named here so every endpoint
+# this project talks to is one constant, not a string that can drift from it
+# the way ui/devices_page.py's "/r" once drifted from ENDPOINT_REGISTER.
+ENDPOINT_LINK_NEW = "/link/new"
+ENDPOINT_LINK_JOIN = "/link/join"
+ENDPOINT_GROUP = "/group"
 
 
 class Transport:
@@ -71,9 +77,16 @@ class Transport:
     wrong types — without a network or a server.
     """
 
-    def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT) -> None:
+    def __init__(self, base_url: str, timeout: int = REQUEST_TIMEOUT,
+                 token: str = "") -> None:
         self.base_url = (base_url or "").rstrip("/")
         self.timeout = timeout
+        # The bearer token from registration. A plain attribute rather than a
+        # constructor-only value because SyncClient owns one Transport for the
+        # process lifetime while the token can change under it — set at
+        # registration, cleared at unregistration. See AUDIT SF-09 and
+        # server/models.py note 4: this, not the device id, is the credential.
+        self.token = token or ""
 
     def post(self, path: str, payload: dict):
         if not self.base_url:
@@ -91,13 +104,20 @@ class Transport:
             log.error("Could not encode a sync request: %s", e)
             return None
 
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": f"ProtBot/{__version__}",
+        }
+        # Absent only for /register itself, which is how a token is obtained
+        # in the first place. Every other endpoint needs one; a server that
+        # requires it and gets none simply answers 401, same as a wrong one.
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
         request = urllib.request.Request(
             url,
             data=body,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": f"ProtBot/{__version__}",
-            },
+            headers=headers,
             method="POST",
         )
         try:
@@ -138,6 +158,7 @@ class SyncClient:
         # Group totals from the last successful /sync, keyed by server app id.
         self._group_totals: dict = {}
         self._group_fetched_at = 0.0
+        self._group_device_count = 0
         # The date those totals describe. Freshness alone is not enough: a
         # sync at 23:50 is still "fresh" at 00:30, but it is yesterday's
         # figure, and applying it to today would hand the user a limit that
@@ -171,6 +192,10 @@ class SyncClient:
     @property
     def device_id(self) -> str:
         return str(self.config.get("device_id", "") or "").strip()
+
+    @property
+    def device_token(self) -> str:
+        return str(self.config.get("device_token", "") or "").strip()
 
     # ── What the monitor reads ───────────────────────────────────────────
 
@@ -220,6 +245,7 @@ class SyncClient:
                 "fresh": (syncproto.is_fresh(self._group_fetched_at)
                           and self._group_date == syncproto.local_date()),
                 "apps_known": len(self._group_totals),
+                "devices": self._group_device_count,
                 "last_error": self._last_error,
             }
 
@@ -279,6 +305,12 @@ class SyncClient:
         if not self.enabled:
             return False
 
+        # Arm the transport with the current token before any request goes
+        # out this cycle. A plain attribute, not a constructor argument,
+        # because re-registration can replace the token while this same
+        # Transport instance keeps running. See AUDIT SF-09.
+        self._transport.token = self.device_token
+
         self._ensure_app_ids()
 
         local_totals = self._local_totals_by_server_id()
@@ -314,6 +346,7 @@ class SyncClient:
             self._group_totals = totals
             self._group_fetched_at = time.time()
             self._group_date = today
+            self._group_device_count = syncproto.parse_device_count(response)
             self._last_error = ""
 
         log.debug("Synced: %d app(s), %d device(s).",
@@ -341,7 +374,8 @@ class SyncClient:
         if not missing:
             return
 
-        payload = syncproto.build_app_sync(self.device_id, apps)
+        payload = syncproto.build_app_sync(self.device_id, apps,
+                                           overrides=self._manual_keys())
         if not payload:
             return
 
@@ -359,6 +393,10 @@ class SyncClient:
 
     def _app_id_map(self) -> dict:
         raw = self.config.get("server_app_ids", {}) or {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _manual_keys(self) -> dict:
+        raw = self.config.get("sync_key_overrides", {}) or {}
         return raw if isinstance(raw, dict) else {}
 
     def _server_id_for(self, local_app_id: int) -> int:
@@ -390,19 +428,29 @@ class SyncClient:
 
 
 def register_device(config, device_name: str = "", email: str = "",
-                    transport=None) -> str:
+                    platform: str = "", transport=None) -> str:
     """
-    Register this device and store the id it is given. Returns the id, or "".
+    Register this device and store the id — and the token — it is given.
+    Returns the id, or "".
 
     This is the moment sync turns on, so it is deliberately an explicit call
     made from the Devices tab rather than something that happens on startup.
     The email is optional and is the user's to type or leave blank; the server
     discards it after the response (server/models.py).
+
+    The response also carries a bearer token (`tok`), which from here on is
+    the actual credential — see AUDIT SF-09 and server/models.py note 4. A
+    device id alone was never meant to prove anything; it is what the request
+    is *about*, not who is asking. A response with an id but no token is
+    treated as a registration failure: continuing without one would silently
+    fall back to the unauthenticated behaviour this exists to close.
     """
     transport = transport or Transport(config.get("server_url", ""))
     payload = {"n": str(device_name or "")}
     if email:
         payload["e"] = str(email)
+    if platform:
+        payload["p"] = str(platform)
 
     response = transport.post(ENDPOINT_REGISTER, payload)
     if not isinstance(response, dict):
@@ -414,7 +462,14 @@ def register_device(config, device_name: str = "", email: str = "",
         log.warning("Device registration returned no id.")
         return ""
 
+    token = str(response.get("tok", "") or "").strip()
+    if not token:
+        log.warning("Device registration returned no token; refusing to "
+                    "register without one.")
+        return ""
+
     config.set("device_id", device_id)
+    config.set("device_token", token)
     log.info("Device registered for sync.")
     return device_id
 
@@ -425,9 +480,73 @@ def unregister_device(config) -> None:
 
     Clearing the device id alone would leave the app quiet but still holding
     the identifier that ties this machine to data on the server, and the stale
-    app-id mapping would be wrong the moment the user registered again.
+    app-id mapping would be wrong the moment the user registered again. The
+    token goes for the same reason — and because it is the credential
+    (AUDIT SF-09), leaving it behind would leave it sitting in config on disk
+    for no purpose once sync is off.
     """
     config.set("device_id", "")
+    config.set("device_token", "")
     config.set("server_app_ids", {})
     config.set("linked_devices", [])
     log.info("Device unregistered; sync is off.")
+
+
+# ── Matching an app across devices by hand ──────────────────────────────────
+#
+# canonical_app_key (core/syncproto.py) is a best-effort guess and says so:
+# a package named after its vendor rather than its product — Firefox.exe
+# meeting org.mozilla.firefox — is a case no string rule resolves without a
+# brand list. This is the fallback: let the user say "these two are the same
+# app" directly, on both devices, rather than counting the same app twice
+# because a guess came up short. See STATUS.md.
+
+
+def manual_key_for(config, local_app_id: int) -> str:
+    """The manual sync key for one app, or "" if it uses the automatic one."""
+    try:
+        overrides = config.get("sync_key_overrides", {}) or {}
+        return str(overrides.get(str(int(local_app_id)), "") or "").strip()
+    except Exception:
+        return ""
+
+
+def set_manual_key(config, local_app_id: int, text: str) -> str:
+    """
+    Give one app the sync key `text` normalises to, instead of the one
+    canonical_app_key would compute from its name.
+
+    Returns the key actually stored — `text` run through canonical_app_key's
+    own normalisation, the same rules applied to every other name in this
+    protocol, so what the caller sees echoed back is exactly what has to
+    match on the other device, not raw text that merely looks similar.
+    `text` that normalises to nothing (empty, or noise only) clears the
+    override instead of setting it to "": an empty key is not "no override",
+    it is the one string every other unresolved app would also collide on.
+
+    Also drops this app's cached server id (see core/syncproto.py's
+    canonical_app_key: a different key means a different identity server-
+    side), so the next sync cycle re-sends it under the new key instead of
+    silently keeping the old mapping — `_ensure_app_ids` only re-sends an
+    app already missing from that map.
+    """
+    key = syncproto.canonical_app_key(text)
+    app_key = str(int(local_app_id))
+
+    overrides = dict(config.get("sync_key_overrides", {}) or {})
+    if key:
+        overrides[app_key] = key
+    else:
+        overrides.pop(app_key, None)
+    config.set("sync_key_overrides", overrides)
+
+    server_ids = dict(config.get("server_app_ids", {}) or {})
+    if server_ids.pop(app_key, None) is not None:
+        config.set("server_app_ids", server_ids)
+
+    return key
+
+
+def clear_manual_key(config, local_app_id: int) -> None:
+    """Go back to the automatic key for one app."""
+    set_manual_key(config, local_app_id, "")

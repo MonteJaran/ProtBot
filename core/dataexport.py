@@ -48,7 +48,8 @@ EXPORT_FORMAT_VERSION = 1
 # either a credential or points at one.
 _EXCLUDED_SETTINGS = frozenset({
     "entitlement",     # signed licence blob, machine-bound
-    "device_id",       # the sync credential: it travels in the URL path
+    "device_id",       # identifies this install to the sync server
+    "device_token",    # the sync credential itself — see AUDIT SF-09
     "server_app_ids",  # meaningless without the device id, and tied to it
 })
 

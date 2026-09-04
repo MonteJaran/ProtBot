@@ -33,6 +33,11 @@ import org.json.JSONObject
  * `server/models.py`, and the client is tested against a fake [Transport], so
  * what is verified is how it behaves on every response shape — including the
  * ones a broken server would send.
+ *
+ * Every request after [register] carries this device's bearer token — see
+ * [deviceToken] and `server/models.py` note 4 (AUDIT SF-09). The device id
+ * alone was never meant to prove anything; it is what a request is *about*,
+ * not who is asking.
  */
 class SyncClient(
     context: Context,
@@ -66,6 +71,9 @@ class SyncClient(
     private var uploadedDate: String = ""
 
     val deviceId: String get() = prefs.getString(KEY_DEVICE_ID, "").orEmpty()
+
+    /** The bearer token from registration — the credential itself; see AUDIT SF-09. */
+    val deviceToken: String get() = prefs.getString(KEY_DEVICE_TOKEN, "").orEmpty()
 
     val enabled: Boolean get() = deviceId.isNotEmpty()
 
@@ -129,6 +137,8 @@ class SyncClient(
         val today = Sync.localDate(now)
         val localTotals = localTotalsByServerId(now.toLocalDate())
 
+        val token = deviceToken
+
         if (localTotals.isNotEmpty()) {
             val payload = JSONObject().apply {
                 put("d", deviceId)
@@ -140,14 +150,14 @@ class SyncClient(
             // that never landed would make the merge subtract a contribution
             // the group total does not contain, and this device's own minutes
             // would go missing from the shared limit.
-            transport.post(ENDPOINT_UPLOAD, payload) ?: return false
+            transport.post(ENDPOINT_UPLOAD, payload, token) ?: return false
             synchronized(this) {
                 uploaded = localTotals
                 uploadedDate = today
             }
         }
 
-        val response = transport.post(ENDPOINT_SYNC, JSONObject().put("d", deviceId))
+        val response = transport.post(ENDPOINT_SYNC, JSONObject().put("d", deviceId), token)
             ?: return false
 
         val totals = parseSync(response)
@@ -175,14 +185,23 @@ class SyncClient(
      * phone before it.
      */
     suspend fun register(deviceName: String, email: String = ""): String {
-        val payload = JSONObject().put("n", deviceName)
+        val payload = JSONObject().put("n", deviceName).put("p", "Android")
         if (email.isNotBlank()) payload.put("e", email)
 
         val response = transport.post(ENDPOINT_REGISTER, payload) ?: return ""
         val id = response.optString("id").orEmpty().trim()
         if (id.isEmpty()) return ""
 
-        prefs.edit().putString(KEY_DEVICE_ID, id).apply()
+        // A response with an id but no token is a failed registration, not a
+        // partial one — continuing without it would silently fall back to
+        // sending every later request unauthenticated. See AUDIT SF-09.
+        val token = response.optString("tok").orEmpty().trim()
+        if (token.isEmpty()) return ""
+
+        prefs.edit()
+            .putString(KEY_DEVICE_ID, id)
+            .putString(KEY_DEVICE_TOKEN, token)
+            .apply()
         return id
     }
 
@@ -191,11 +210,17 @@ class SyncClient(
      *
      * Clearing the device id alone would leave the app quiet but still holding
      * the identifier tying this phone to data on the server, and the stale
-     * app-id mapping would be wrong if the user registered again.
+     * app-id mapping would be wrong if the user registered again. The token
+     * goes for the same reason, and because it is the credential (SF-09):
+     * there is no purpose left for it once sync is off.
      */
     @Synchronized
     fun unregister() {
-        prefs.edit().remove(KEY_DEVICE_ID).remove(KEY_APP_IDS).apply()
+        prefs.edit()
+            .remove(KEY_DEVICE_ID)
+            .remove(KEY_DEVICE_TOKEN)
+            .remove(KEY_APP_IDS)
+            .apply()
         groupTotals = emptyMap()
         groupFetchedAt = 0L
         groupDate = ""
@@ -220,8 +245,12 @@ class SyncClient(
         val known = appIdMap()
         if (apps.all { known.containsKey(it.packageName) }) return
 
+        val overrides = manualKeyMap()
         val entries = apps.mapNotNull { app ->
-            val key = Sync.canonicalAppKey(app.label.ifBlank { app.packageName })
+            val key = Sync.effectiveAppKey(
+                app.label.ifBlank { app.packageName },
+                overrides[app.packageName],
+            )
             if (key.isEmpty()) null else JSONArray(listOf(app.packageName, key, ""))
         }
         if (entries.isEmpty()) return
@@ -229,6 +258,7 @@ class SyncClient(
         val response = transport.post(
             ENDPOINT_APPS,
             JSONObject().put("d", deviceId).put("a", JSONArray(entries)),
+            deviceToken,
         ) ?: return
 
         val mapping = response.optJSONObject("m") ?: return
@@ -265,6 +295,79 @@ class SyncClient(
 
     private fun serverIdFor(packageName: String): Int? =
         appIdMap()[packageName]?.takeIf { it > 0 }
+
+    // ── Matching an app across devices by hand ───────────────────────────
+    //
+    // Sync.canonicalAppKey is a best-effort guess and says so in its own doc
+    // comment — a package named after its vendor rather than its product is
+    // a case no string rule resolves without a brand list. This is the
+    // fallback: the user gives an app the same key on both devices, and
+    // Sync.effectiveAppKey (used by ensureAppIds above) makes it win
+    // outright. Mirrors the desktop's core/syncclient.py set_manual_key /
+    // manual_key_for / clear_manual_key. There is no screen that calls
+    // these yet — the Android UI is source without a build, see STATUS.md —
+    // but the data layer is ready for the one that does.
+
+    /** The manual sync key for one app, or "" if it uses the automatic one. */
+    fun manualKeyFor(packageName: String): String = manualKeyMap()[packageName].orEmpty()
+
+    /**
+     * Give one app the sync key `text` normalises to, instead of the one
+     * [Sync.canonicalAppKey] would compute from its name.
+     *
+     * Returns the key actually stored — `text` run through
+     * [Sync.canonicalAppKey]'s own normalisation, the rules applied to
+     * every other name in this protocol, so what the caller sees echoed
+     * back is exactly what has to match on the other device. Text that
+     * normalises to nothing clears the override instead of storing "": an
+     * empty key is not "no override", it is the one string every other
+     * unresolved app would also collide on.
+     *
+     * Also drops this app's cached server id, so the next sync cycle
+     * re-sends it under the new key — [ensureAppIds] only re-sends an app
+     * already missing from that map.
+     */
+    fun setManualKey(packageName: String, text: String): String {
+        val key = Sync.canonicalAppKey(text)
+
+        val overrides = manualKeyMap().toMutableMap()
+        if (key.isNotEmpty()) overrides[packageName] = key else overrides.remove(packageName)
+        saveManualKeyMap(overrides)
+
+        val serverIds = appIdMap()
+        if (serverIds.containsKey(packageName)) {
+            saveAppIdMap(serverIds - packageName)
+        }
+
+        return key
+    }
+
+    /** Go back to the automatic key for one app. */
+    fun clearManualKey(packageName: String) {
+        setManualKey(packageName, "")
+    }
+
+    private fun manualKeyMap(): Map<String, String> {
+        val raw = prefs.getString(KEY_SYNC_KEY_OVERRIDES, "") ?: ""
+        if (raw.isEmpty()) return emptyMap()
+        return try {
+            val json = JSONObject(raw)
+            json.keys().asSequence().mapNotNull { pkg ->
+                val key = json.optString(pkg, "")
+                if (key.isNotEmpty()) pkg to key else null
+            }.toMap()
+        } catch (e: Exception) {
+            // A corrupt preference must not stop sync forever — see appIdMap.
+            android.util.Log.w(TAG, "Discarding unreadable sync key overrides", e)
+            emptyMap()
+        }
+    }
+
+    private fun saveManualKeyMap(map: Map<String, String>) {
+        val json = JSONObject()
+        for ((pkg, key) in map) json.put(pkg, key)
+        prefs.edit().putString(KEY_SYNC_KEY_OVERRIDES, json.toString()).apply()
+    }
 
     private suspend fun localTotalsByServerId(today: LocalDate): Map<Int, Long> {
         val ids = appIdMap()
@@ -314,6 +417,8 @@ class SyncClient(
         const val ENDPOINT_SYNC = "/sync"
 
         private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_DEVICE_TOKEN = "device_token"
         private const val KEY_APP_IDS = "server_app_ids"
+        private const val KEY_SYNC_KEY_OVERRIDES = "sync_key_overrides"
     }
 }

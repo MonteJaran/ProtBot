@@ -97,6 +97,17 @@ jobs:
         # requirements.txt.
         run: python -c "import psutil, plyer; print('runtime deps OK')"
 
+      - name: Install as an editable package
+        # AUDIT ST-04: main.py used to reach core/ and ui/ with
+        # sys.path.insert. This is what replaced it — a real install,
+        # not a read of the config that describes one. Runs on Windows,
+        # the real target, where actions/setup-python's Python ships
+        # tkinter, so this also proves `import main` — everything
+        # main.py imports at module level — actually resolves.
+        run: |
+          python -m pip install -e .
+          python -c "import main; assert callable(main.main); print('main imports OK')"
+
       - name: Verify the packaging config
         # PyInstaller and Inno Setup cannot run here, but the spec, the
         # installer script and the launcher can be checked for drift.
@@ -123,6 +134,28 @@ jobs:
         # freezes any advisory published after the pin was taken — this job is
         # what stops that going unnoticed.
         run: pip-audit --requirement requirements.lock --strict --progress-spinner off
+
+  server:
+    name: Sync server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install server + test dependencies
+        # server/requirements.txt is deliberately separate from
+        # requirements.txt/.lock — the server is never bundled into a
+        # ProtBot build (server/requirements.txt's own docstring).
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r server/requirements.txt pytest
+
+      - name: Run the server's tests
+        run: python -m pytest tests/test_server.py -v
 
   android-core:
     name: Android shared rules

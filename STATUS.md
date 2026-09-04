@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 698 Python tests green on 3.10 and 3.12, plus 115
+**Where things stand:** 955 Python tests green on 3.10 and 3.12, plus 118
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -15,7 +15,7 @@ has ever been built, nobody has ever installed it, and almost everything now
 standing between here and a first release is a decision or an account rather
 than a commit.
 
-*Last updated 2026-08-29.*
+*Last updated 2026-09-04.*
 
 ---
 
@@ -23,18 +23,17 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 813 tests below are only as good as the last time someone ran them by hand. |
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI (`.github/workflows/ci.yml`) is back **on**, owner's instruction — but every job still fails with "the account is locked due to a billing issue" until this is actually paid, which is a GitHub account setting, not something any amount of code touches. Until it's unlocked, the test count in the header above is only as good as the last time someone ran it by hand. |
 | 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
-| 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
+| 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. **This one genuinely cannot be coded around**: there is no Windows machine anywhere this session can reach, so nobody has attempted it on your behalf — this line is exactly as true as it was before. |
 | 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
 | 5 | **Publish a contact address** | Free, but it is a decision | `PRIVACY.md` and `SECURITY.md` both hold a placeholder. GDPR Article 13 *requires* the controller's contact details; a policy without one is not compliant. Whether that is a personal email or `security@` on your own domain is your call, which is why neither file guesses. A test fails the day either placeholder is deleted without a real address replacing it. |
-| 6 | **Confirm the licence** | Free, effectively one-way | `LICENSE` states the all-rights-reserved default explicitly, which is right for something you intend to sell and keeps every option open. Open source instead is a deliberate, irreversible decision — a permissive licence cannot be recalled from copies people already hold. |
-| 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch) | An evening now, far cheaper than after a store listing is built on the name. |
-| 8 | **Get the server source into git** | An afternoon | `server/` holds request models and nothing else. The deployed function that holds user emails is unversioned, unreviewed and unbacked-up. Everything below that touches the server waits on this. |
-| 9 | **Build the sync server** — `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join` | A day, after #8 | Both clients are written and tested against a fake transport; there is nothing between them. `server/models.py` defines the wire format and spells out the three things a server must get right: cumulative totals, the client's own date, and matching on the canonical key. Until it exists the phone and the PC each count their own time, and QR linking has nothing to talk to. |
-| 10 | **Build `/license/verify`** | A morning, after #8 | The client calls it and already handles every failure mode — offline grace, refusal, server error. The endpoint does not exist. |
-| 11 | **Sign up a merchant of record** | ~5% of revenue | Paddle or Lemon Squeezy. The licence gate is built and there is nothing to sell keys with. Both handle EU VAT, which is the part you do not want to own. |
-| 12 | **Lawyer: review `PRIVACY.md`, write terms and a EULA** | A few hundred € | The policy is accurate to the code — every claim in it is checked by a test — but was not written by a lawyer, and there are no terms and no EULA at all. Before any public release or any money changing hands. |
+| ~~6~~ | ~~Confirm the licence~~ **Confirmed: proprietary.** | — | Decided — not open source, nothing shared. `LICENSE` already states exactly that (all-rights-reserved, no redistribution, no derivative works) and needs no change. Closed. |
+| 7 | **Trademark-clear the name** | Free (USPTO TESS, EUIPO eSearch), then a lawyer if it's close | A plain web search (not a formal TESS/EUIPO search — that's still yours to run) already found a real conflict worth knowing about before going further: an existing **"ProtBot" Discord bot**, live on top.gg, in the same general "bot/software" space this app is in. That does not by itself mean the name is unavailable — but it's common-law prior use in the same category, which is exactly the kind of thing that turns into a dispute later rather than earlier. Worth the formal search and possibly item 12's lawyer before more is built on the name. |
+| 8 | **Deploy the sync server** | An hour or two, once a host is picked | The code is done — see Finished below, `server/`, all 7 endpoints plus `/license/verify`, tested. What's left is entirely infrastructure only you can choose: a host (`server/README.md` deliberately does not pick one — a VPS, Fly.io, Render, Railway, whatever you already have), a domain/subdomain with TLS pointed at it, `config.set("server_url", ...)` on the desktop side, and backups of `protbot_server.db`. `server/README.md`'s "Deploying it" section is the checklist. Separately: the *old* deployed function this replaces — unversioned, holding user emails — still exists somewhere and was never reachable from here to migrate or decommission; worth finding and shutting down once the new one is live, so there are not two servers with two different sets of rules. |
+| 9 | **Provision licence keys once Paddle exists** | Minutes per sale, until automated | `/license/verify` is real and tested against a `license_keys` table, but nothing fills that table automatically yet — there is no Paddle account to know its webhook payload shape (item 10). `server/issue_license.py` is the manual bridge: run it by hand for now. Once Paddle is set up, its webhook event on a successful sale is what a small `server/paddle_webhook.py` would turn into the same `license_issue()` call this script already makes — share the webhook payload shape when that account exists and this becomes one more file rather than a redesign. |
+| 10 | **Sign up a merchant of record** | ~5% of revenue | Paddle or Lemon Squeezy. The licence gate is built and there is nothing to sell keys with. Both handle EU VAT, which is the part you do not want to own. Checked for Montenegro specifically: **Stripe does not support a Montenegro-based seller account at all.** **Paddle does** — Montenegro, Albania, Bosnia and Kosovo are all on its supported-seller list — and its checkout takes any Visa/Mastercard regardless of issuing bank, so a CKB- or Addiko-issued card works there the same as any other. Lemon Squeezy's country list did not confirm or rule out Montenegro in what was checked; ask them directly before picking it over Paddle. Local alternative if a merchant-of-record's cut is unwanted: CKB's own eCommerce gateway, or CorvusPay (regional, Croatian-licensed) — either bills as a Montenegro merchant directly, but then VAT/tax compliance is yours to handle instead of the MoR's. **You're doing this one yourself.** |
+| 11 | **Lawyer: review `PRIVACY.md`, write terms and a EULA** | A few hundred € | The policy is accurate to the code — every claim in it is checked by a test — but was not written by a lawyer, and there are no terms and no EULA at all. Before any public release or any money changing hands. |
 
 ---
 
@@ -42,29 +41,19 @@ than a commit.
 
 Roughly in value order.
 
-### 1. Authenticate the sync API (AUDIT SF-09)
-The device ID *is* the credential and it travels in the URL path, where it
-lands in server and proxy logs. Anyone holding or guessing one can read that
-user's data. Client plumbing is a day; the server half waits on #8 above.
-
-### 2. Publish `assetlinks.json` on protbot.app
+### 1. Publish `assetlinks.json` on protbot.app
 The Android manifest declares `autoVerify="true"` for the device-link URL.
 Without the assetlinks file served from the domain, Android shows a chooser
 instead of opening ProtBot directly — it still works, it is one tap worse.
 Waits on #4 above.
 
-### 3. The in-app QR scanner
+### 2. The in-app QR scanner
 `Linking.parsePayload` reads a scanned code and the manifest opens the app from
 one, so the stock-camera path is complete. What is missing is scanning from
 *inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
 machine with no Android SDK.
 
-### 4. Finish the accessibility work (AUDIT ST-06 remainder)
-DPI awareness and font sizes are done. Still missing: keyboard navigation,
-screen-reader labelling, a high-contrast mode. The EU Accessibility Act has
-applied to consumer software since June 2025.
-
-### 5. Generate an SBOM, for the EU Cyber Resilience Act
+### 3. Generate an SBOM, for the EU Cyber Resilience Act
 Regulation (EU) 2024/2847 applies to products with digital elements sold in the
 EU. Vulnerability-reporting obligations begin **11 September 2026**; full
 application **11 December 2027**. Partly covered already — `SECURITY.md` is the
@@ -72,33 +61,48 @@ vulnerability policy, `pip-audit` runs in CI, dependencies are hash-pinned.
 Missing is the bill of materials; `cyclonedx-py` over the lockfile in a CI job
 is most of it.
 
-### 6. Build the Android app for real
-The shared rules compile and pass 115 tests. `android/app/` has never been
-compiled, because this machine has no Android SDK. Until someone runs
-`gradle :app:assembleDebug`, the Android half is source code rather than
-software.
+### 4. Build the Android app for real
+The shared rules compile and pass the Kotlin count in the header above.
+`android/app/` has never been compiled, because this machine has no Android
+SDK. Until someone runs `gradle :app:assembleDebug`, the Android half is
+source code rather than software.
 
-### 7. Write the Android screens
+### 5. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
-and tested.
+and tested — including, now, the manual app-matching data layer (see
+Finished below): `SyncClient.kt` has `manualKeyFor`/`setManualKey`/
+`clearManualKey` ready, and no screen calls them yet.
 
-### 8. Let people link apps across devices by hand
-`syncproto.canonical_app_key` joins the same app on two devices by normalising
-its name — a good guess, not a guarantee. A package named after its vendor
-rather than its product will not meet the desktop executable. A small screen
-saying "these two are the same app" closes it. Nothing depends on it: an
-unmatched app simply counts per-device.
+### 6. The remaining roadmap feature
+In `ROADMAP.md`. Three items are now fully shipped, free, see Finished
+below: pattern recognition (item 3, all three pieces), PDF/Excel report
+export (item 5, both formats), and the sync server (item 1's server half).
+Team challenges & leaderboards is dropped — owner's call, see ROADMAP.md
+item 6. The one thing still open is predictive alerts (deliberately not
+attempted alongside item 3 — the live half belongs in `core/monitor.py`,
+the app's one safety-critical always-running loop, and wants its own pass
+rather than being rushed in on the side; see `ROADMAP.md` item 4). Design
+direction is settled: computed entirely on the tracked device (the
+statistics already exist — `core/trends.py`), nothing raw ever leaves it;
+if a parent-facing alert is wanted at all, only a fired/not-fired signal
+and the device id travels, never the underlying usage pattern — the
+parent already has their own name for that device, so an id is enough to
+identify which one.
 
-### 9. Make it an installable package (AUDIT ST-04 remainder)
-`main.py` still does `sys.path.insert`. A real `[project.scripts]` entry point
-drops the hack and simplifies the PyInstaller spec.
-
-### 10. The remaining roadmap features
-In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
-user's own history (plain statistics, no model needed), predictive alerts, PDF
-and Excel export, team features. None worth starting before someone has
-installed the app.
+### 7. Recovered scope — from two old builds, not built here yet
+Two old builds surfaced during this project (a Windows child-agent `.exe`
+with a live Firebase backend, and a React Native/Expo phone app for iOS
+and Android) turned out to be a far more feature-complete system than
+ProtBot is today. `ROADMAP.md`'s new "Recovered scope" section (items
+9–22) lists what they had that ProtBot doesn't: anti-tamper hardening, a
+parent PIN, web filtering, on-request location, a "request more time"
+approval flow, new-app detection, a weekly parent-facing report, an SOS
+alert, a remote command channel, a token/chores/prizes economy, parent↔
+child chat, geofencing, and — the biggest single item — an iOS app.
+Nothing there is committed to; all of it is `not started`, to be built
+fresh in ProtBot's own stack if and when it's wanted, not ported from
+either old build.
 
 ---
 
@@ -141,8 +145,11 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **Atomic config writes, thread locking, storage hardening** | A crash mid-write used to truncate the config and reset every setting. |
 | **Rotating logs** | And a log the user can delete, because it is a plaintext record of every app opened. |
 | **DPI awareness** | The UI is no longer bitmap-stretched on any display above 100% scaling. |
+| **Keyboard navigation and a high-contrast mode (AUDIT ST-06)** | Every dialog closes on Escape; a Canvas used for scrolling — three of them, one per page — is reachable by Tab, which Tk does not do by default; the app's one click-only control (an ad banner, currently unused — `_ADS` is empty) responds to Enter/Space too. A visible focus ring on every focusable control, in both palettes: `ui/a11y.py` sets it once, application-wide, rather than per widget. `ui/theme.py` adds a second, WCAG AA-verified palette (`tests/test_theme.py` checks the actual contrast ratio, not by eye) behind a Settings toggle — restart-required, said plainly, because Tk cannot re-theme a window already on screen. What this does not do, and says so in `ui/a11y.py`: full screen-reader support. Tk does not implement MSAA or UI Automation for the widgets it draws, so NVDA or Narrator would see an unlabelled pane, not a button — closing that gap for real means a different GUI toolkit or unverifiable native interop, not a Settings screen. |
 | **Crash handling** | Unhandled exceptions on the main thread, background threads and Tk callbacks all reach the log. A frozen build has no console, so a dead monitor thread used to mean limits silently stopped being enforced while the window looked fine. |
 | **A ctypes tray icon** | Replaced pystray, which dropped the LGPL-3.0 §4 obligations that are awkward to satisfy in a frozen build. |
+| **Pattern recognition across your history (`ROADMAP.md` item 3)** | All three pieces, all free, all in `core/trends.py` + `ui/insights_page.py`. "This Week vs Last Week": total time this week against last week, the percent change, up to three apps with the biggest move either direction (`week_over_week_delta`, `biggest_movers`). "Patterns in Your History": which app tends to run right before a distraction-category session starts (`preceding_app_triggers`, reusing the page's existing `_DISTRACTING` category set rather than a new taxonomy), and average usage per day of week with how far each day drifts from the overall average (`weekday_breakdown`). `_draw_premium`'s old teasers for all three are gone; a regression test guards against teasing something already shipped as still "Planned" — this class of bug happened once already this session. |
+| **PDF and Excel report export (`ROADMAP.md` item 5)** | Both formats, both free, same 30-day per-app history the CSV export already sends. `core/export_xlsx.py` (openpyxl, MIT, hash-pinned in `requirements.lock`, noticed in `THIRD_PARTY_NOTICES.md`) builds a styled `.xlsx` workbook. `core/export_pdf.py` builds a multi-page `.pdf` by writing PDF objects directly — no library: `fpdf2` is LGPL-3.0 (the same problem class AUDIT BL-05 already fixed once, for pystray), and `reportlab` mandates Pillow (permitted under BL-05's own reasoning, but against the standing decision to keep it out — the same call `core/qrcode.py` already made). Verified against `qpdf --check` and `pdftotext`, dev-only tools, same role OpenCV/segno play for `core/qrcode.py`'s tests. "Export Excel" and "Export PDF" sit next to "Export CSV" in the Processes tab. |
 
 ### Cross-device
 
@@ -152,6 +159,20 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **Cross-device sync** | A two-hour limit means two hours across both devices, not two hours each. Uploads are cumulative so a retry cannot double-count; the day is the client's day; merging subtracts this device's own stale contribution rather than taking the larger number. |
 | **QR device linking** | The PC shows a code, the phone scans it. The key travels in the URL fragment, which never reaches a web server. An https App Link, not a custom scheme, so the stock camera can open it. The characters stay on screen beside the code as a fallback. |
 | **A QR encoder** | `core/qrcode.py`, standard library only — byte mode, versions 1–10, all four error levels. Verified by reading generated symbols back with a real decoder, which caught two bugs that produced pixel-perfect unreadable codes. |
+| **The sync API is authenticated, end to end (AUDIT SF-09)** | Registration returns a bearer token as well as a device id, and every client — desktop and the Android app's `SyncClient.kt` — sends it as `Authorization: Bearer <token>` on every request after; no device id travels in a URL path anywhere any more. `ui/devices_page.py` also turned out to be a *third*, older, unauthenticated implementation of registration and linking that never called the tested `core/syncclient.py` / `core/linking.py` it duplicated — including a `/r` endpoint that had drifted from the real `/register`, and a "cross-device rows" display in the Processes tab reading response fields no server contract ever defined. Both are now gone in favour of the one implementation; a new `core.linking.list_group()` lists the Devices tab's group with no device id in the request at all. The server side of this (see below) now checks the token against the device it claims to be, closing the finding rather than just the client half of it. |
+| **Matching an app across devices by hand** | `syncproto.canonical_app_key` is a best-effort guess and cannot resolve every pair (Firefox.exe never meets `org.mozilla.firefox` on its own — see Known-imperfect below). The Devices tab's new "Match Apps…" dialog lets the user give an app the same sync key on both devices instead; an override wins outright over the computed key, and setting one drops that app's cached server id so the next sync cycle re-sends it under the new key. Mirrored in the Android app's `SyncClient.kt` (`manualKeyFor`/`setManualKey`/`clearManualKey`) so the data is ready whenever Android has a screen to call it from — it does not yet. |
+
+### The sync server (`server/`)
+
+| Done | What it means |
+|---|---|
+| **All 7 sync/linking endpoints, plus `/license/verify`** | `/register`, `/apps`, `/upload`, `/sync`, `/link/new`, `/link/join`, `/group`, `/license/verify` — a real FastAPI app (`server/app.py`) implementing `server/models.py`'s contract exactly, which both clients were already written and tested against. `server/models.py` itself gained the pieces it was missing to actually be that contract: a `z` (date) field on `UploadReq` that `core/syncproto.py`'s real `build_upload()` has always sent but the model never declared, plus `SyncReq`/`LinkNewReq`/`LicenseVerifyReq`/`LicenseVerifyResp`, none of which existed as named models despite every client already sending and reading exactly that shape. Additive only — nothing an existing client does had to change. |
+| **Every device its own group from birth** | `server/db.py`: a device gets a fresh group id the moment it registers, so "not yet linked to anyone" is a group of one rather than a null case every query has to special-case. Linking moves a device's group id to match the host's and migrates its already-assigned app ids along where nothing in the new group already claims the same one — the one case that is not migrated (both devices had already synced the same app solo, under separate ids, before ever linking) is documented in `join_group()`'s own docstring as a narrow, accepted gap, the same "best-effort, and it says so" posture `canonical_app_key` already has. |
+| **Group totals exclude a device that has gone quiet** | Not specified in `server/models.py`, and a real gap if left unhandled: naively summing "each device's most recent upload" would let a device offline for days sit in every `/sync` response forever, inflating a live device's limit for as long as the other stayed off. `server/db.py`'s `group_totals()` only counts a device's contribution if it has been seen within `GROUP_CONTRIBUTION_MAX_AGE_SEC` (2 days — deliberately generous, so a real timezone difference is never mistaken for staleness; note 2 already settled that dates are the client's own to keep). |
+| **Bearer tokens are stored hashed and checked in constant time** | `server/auth.py`: SHA-256 over the token, `hmac.compare_digest` for the check, and the same 401 whether the device does not exist, the header is missing, or the token is simply wrong — so a probe cannot learn which case it hit. `/group` authenticates by token alone, with no device id anywhere in its request, matching what `server/models.py` already specified for it. |
+| **The link-code endpoints are rate-limited** | `server/ratelimit.py` — the other half of AUDIT SF-09 `server/models.py` names directly ("rate-limiting the link-code endpoint — is still open; nothing in the client can substitute for that"). In-memory, per-process, documented as exactly that rather than built out into something distributed this project does not need yet. |
+| **A manual bridge for licence keys until Paddle exists** | `server/issue_license.py` — a CLI that writes the same row a Paddle webhook would write on a successful sale. Nothing calls it automatically yet; there is no Paddle account to know the webhook's payload shape (see "Blocked on you" above). |
+| **43 tests, entirely through FastAPI's `TestClient`** | No real network, no real deployment — but every request/response shape a real client produces, including the ones AUDIT SF-09 specifically named: a token that does not match the device it claims, and unthrottled link-code guessing. `tests/test_server.py`. **Never deployed anywhere** — see "Blocked on you" above and `server/README.md`. |
 
 ### Legal and compliance
 
@@ -172,9 +193,10 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 
 | Done | What it means |
 |---|---|
-| **813 tests** | 698 Python across 3.10 and 3.12, 115 Kotlin. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
+| **A full test suite** | Counts are at the top of this file, which a test holds current — not repeated here, after this row itself went stale once. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
+| **An installable package (AUDIT ST-04)** | `pyproject.toml` declares a real build backend and a `protbot = "main:main"` entry point; `main.py`'s `sys.path.insert` — which only ever worked because it happens to sit at the repo root beside `core/` and `ui/` — is gone. Verified with an actual `pip install -e .`, not just read back: that install caught a real bug (a `License ::` classifier that current setuptools now refuses to combine with a license expression, PEP 639 — pre-existing, never triggered because nothing had ever run `pip install .` here before), fixed alongside it. The `dependencies` CI job now installs the package for real and imports `main` on Windows, the target platform. |
 | **Renamed to ProtBot** | Including the data directory, with a migration that never overwrites newer data and never deletes the old folder if the move fails. |
 | **Signed, machine-bound licence gate** | 14-day offline grace. Server errors never revoke; only an explicit refusal does. |
 | **A real distribution** | PyInstaller spec, Inno installer, working uninstaller. Never run — see above. |
@@ -197,13 +219,31 @@ Recorded so nobody rediscovers them as bugs.
 - **Sync stops enforcing after two hours offline.** A group total older than
   that is dropped and each device falls back to its own usage. Enforcing a limit
   against a two-hour-old guess is the worse failure.
+- **The server's rate limiter is in-memory, one process.** Resets on
+  restart, does not coordinate across multiple instances behind a load
+  balancer. Sized for the single-instance deployment this whole server is
+  sized for; a distributed limiter is real scope it does not need yet.
+  `server/ratelimit.py`.
+- **Linking after already syncing solo, to the same app, on both sides, is
+  the one app-matching case the server does not carry forward.** Both
+  devices' rows survive; only the one that was already claimed on the
+  side you did not link from goes unreachable until it happens to
+  re-sync. Same "best-effort, and it says so" posture as the client-side
+  app-name join above. `server/db.py`'s `join_group()`.
 - **The app-name join across devices is a guess.** No string rule resolves a
   package named after its vendor without a brand list. An unmatched app counts
-  per-device, which is the behaviour without sync.
+  per-device, which is the behaviour without sync — or the user closes it by
+  hand from the Devices tab's "Match Apps…" dialog.
 - **A link code is a secret with a short life.** Whoever scans it joins the
   device group and can read its totals. Five minutes, single use, and the
   dialog says so.
 - **The Android app has never been compiled.** The shared rules have.
+- **No screen-reader support.** Every control is keyboard-operable and has a
+  visible focus ring; naming those controls to NVDA or Narrator would need
+  MSAA/UI Automation, which Tk does not implement and this project has no
+  way to build or test blind. See `ui/a11y.py`.
+- **High-contrast mode takes a restart.** Tk bakes a colour into a widget at
+  the moment it is built; there is no live "re-theme everything on screen."
 - **The changelog has no released version.** Nothing has shipped. A test fails
   if that claim stops being true without a version being added.
 
@@ -211,17 +251,20 @@ Recorded so nobody rediscovers them as bugs.
 
 ## Suggested order
 
-1. **Unlock billing.** Until CI runs you cannot trust a single push.
+1. **Unlock billing.** CI is already back on; it just fails on every run
+   until billing is paid. Until it runs clean you cannot trust a single push.
 2. **Microsoft Store account.** $19 to stop SmartScreen frightening everyone
    who tries to install.
 3. **First real Windows build**, on a clean VM, through `BUILD.md`. Find out
    what is broken.
 4. **The three decisions**: the domain, the contact address, the licence. No
    code, all required before the repo goes public.
-5. **Server into git, then the endpoints** — sync and linking first, licence
-   verification second.
-6. **Merchant of record.** The last mile to taking money.
-7. **Lawyer**, before any public release.
+5. **Deploy the sync server.** The code is done and tested — this is a
+   hosting choice now, not a coding task. `server/README.md`.
+6. **Merchant of record**, then wire its webhook to `server/issue_license.py`'s
+   `license_issue()` call so a sale provisions a key automatically.
+7. **Lawyer**, before any public release. Also the trademark question if
+   the top.gg "ProtBot" bot turns out to matter.
 8. **Then features** — and only then marketing. €50 of ads pointed at an app
    nobody can install is €50 spent teaching people it does not work.
 

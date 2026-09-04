@@ -6,15 +6,13 @@ Refreshed only when the tab is selected, so scroll position is never lost.
 import tkinter as tk
 from tkinter import ttk
 
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
+from core import trends
+from ui import a11y
+# See ui/theme.py's docstring: the canonical definitions, and the
+# high-contrast alternative (AUDIT ST-06), live there. GOLD/PURPLE/CYAN are
+# this page's own for normal mode, unified in high-contrast mode only.
+from ui.theme import BG, BG2, BG3, ACCENT, TEXT, TEXT2, SUCCESS, WARNING, ERROR
+
 GOLD    = '#f59e0b'
 PURPLE  = '#8b5cf6'
 CYAN    = '#06b6d4'
@@ -89,6 +87,19 @@ class InsightsPage(ttk.Frame):
         self._canvas.bind_all('<MouseWheel>',
             lambda e: self._canvas.yview_scroll(-(e.delta // 120), 'units'))
 
+        # Keyboard scroll (AUDIT ST-06) — this canvas had none at all before:
+        # no key bindings, and Tk does not make a Canvas tab-focusable by
+        # default, so a keyboard-only user could not scroll this tab past
+        # whatever fit on screen.
+        a11y.focus_scrollable(self._canvas, self.config)
+        self._canvas.bind('<Button-1>', lambda e: self._canvas.focus_set())
+        self._canvas.bind('<Up>',    lambda e: self._canvas.yview_scroll(-1, 'units'))
+        self._canvas.bind('<Down>',  lambda e: self._canvas.yview_scroll(1, 'units'))
+        self._canvas.bind('<Prior>', lambda e: self._canvas.yview_scroll(-5, 'units'))
+        self._canvas.bind('<Next>',  lambda e: self._canvas.yview_scroll(5, 'units'))
+        self._canvas.bind('<Home>',  lambda e: self._canvas.yview_moveto(0))
+        self._canvas.bind('<End>',   lambda e: self._canvas.yview_moveto(1))
+
     # ── Public refresh (called on tab-select only) ────────────────────────────
 
     def refresh(self):
@@ -114,9 +125,29 @@ class InsightsPage(ttk.Frame):
             categories = self.db.get_category_usage_week()
         except Exception:
             categories = []
+        try:
+            last_week_apps  = self.db.get_all_apps_usage_for_week(weeks_ago=1)
+            this_week_total = self.db.get_total_usage_sec_for_week(weeks_ago=0)
+            last_week_total = self.db.get_total_usage_sec_for_week(weeks_ago=1)
+        except Exception:
+            last_week_apps, this_week_total, last_week_total = [], 0, 0
+        try:
+            all_apps = self.db.get_all_tracked_apps()
+        except Exception:
+            all_apps = []
+        try:
+            recent_sessions = self.db.get_sessions_since(days=30)
+        except Exception:
+            recent_sessions = []
+        try:
+            daily_totals = self.db.get_daily_totals(days=28)
+        except Exception:
+            daily_totals = []
 
         self._draw_header()
         self._draw_top_apps(week_apps)
+        self._draw_trend(week_apps, last_week_apps, this_week_total, last_week_total)
+        self._draw_patterns(recent_sessions, all_apps, daily_totals)
         self._draw_distracting(week_apps, categories)
         self._draw_productive(week_apps, categories)
         self._draw_peak_hours(peak_hours)
@@ -184,6 +215,136 @@ class InsightsPage(ttk.Frame):
                      font=('Segoe UI', 22, 'bold')).pack(anchor='w', pady=(6, 0))
             tk.Label(card, text="this week", bg=BG2, fg=TEXT2,
                      font=('Segoe UI', 9)).pack(anchor='w')
+
+    # ── This week vs last week ──────────────────────────────────────────────
+    #
+    # ROADMAP.md's "pattern recognition" item, started at the honest end:
+    # arithmetic over this user's own two most recent weeks (core/trends.py),
+    # not a model. Compared to _WORLD_AVG above, an outside estimate this app
+    # was never in a position to measure, this is a number computed from
+    # exactly the rows this installation holds.
+
+    def _draw_trend(self, week_apps, last_week_apps, this_week_total, last_week_total):
+        f = self._section("This Week vs Last Week")
+        card = tk.Frame(f, bg=BG2, padx=14, pady=12)
+        card.pack(fill='x', padx=5, pady=5)
+
+        delta = trends.week_over_week_delta(this_week_total, last_week_total)
+        if delta["this_week_sec"] == 0 and delta["last_week_sec"] == 0:
+            tk.Label(card, text="Not enough history yet — check back next week.",
+                     bg=BG2, fg=TEXT2, font=('Segoe UI', 10)).pack(anchor='w')
+            return
+
+        delta_sec = delta["delta_sec"]
+        delta_pct = delta["delta_pct"]
+        if delta_pct is None:
+            change_text = "new this week" if delta_sec > 0 else "—"
+            change_color = TEXT2
+        elif delta_sec > 0:
+            change_text = "+%.0f%% vs last week" % delta_pct
+            change_color = ERROR      # more screen time — same framing as "Time You Could Reclaim"
+        elif delta_sec < 0:
+            change_text = "%.0f%% vs last week" % delta_pct
+            change_color = SUCCESS
+        else:
+            change_text = "no change vs last week"
+            change_color = TEXT2
+
+        top_row = tk.Frame(card, bg=BG2)
+        top_row.pack(fill='x', anchor='w')
+        tk.Label(top_row, text=_fmt(delta["this_week_sec"]), bg=BG2, fg=TEXT,
+                 font=('Segoe UI', 20, 'bold')).pack(side='left')
+        tk.Label(top_row, text="  this week", bg=BG2, fg=TEXT2,
+                 font=('Segoe UI', 10)).pack(side='left', pady=(7, 0))
+        tk.Label(card, text=change_text, bg=BG2, fg=change_color,
+                 font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(2, 0))
+        tk.Label(card, text="Last week: %s" % _fmt(delta["last_week_sec"]),
+                 bg=BG2, fg=TEXT2, font=('Segoe UI', 9)).pack(anchor='w', pady=(2, 8))
+
+        name_by_id = {a["app_id"]: a["name"] for a in (*week_apps, *last_week_apps)}
+        this_by_id = {a["app_id"]: a["total_sec"] for a in week_apps}
+        last_by_id = {a["app_id"]: a["total_sec"] for a in last_week_apps}
+        movers = trends.biggest_movers(this_by_id, last_by_id, limit=3)
+        if not movers:
+            return
+
+        ttk.Separator(card).pack(fill='x', pady=(2, 8))
+        tk.Label(card, text="Biggest changes", bg=BG2, fg=TEXT2,
+                 font=('Segoe UI', 9, 'bold')).pack(anchor='w', pady=(0, 4))
+        for mover in movers:
+            name = name_by_id.get(mover["app_id"], "App #%s" % mover["app_id"])
+            mover_delta = mover["delta_sec"]
+            sign  = "+" if mover_delta > 0 else "−"
+            color = ERROR if mover_delta > 0 else SUCCESS
+            row = tk.Frame(card, bg=BG2)
+            row.pack(fill='x', pady=2)
+            tk.Label(row, text=name, bg=BG2, fg=TEXT, font=('Segoe UI', 9),
+                     width=20, anchor='w').pack(side='left')
+            tk.Label(row, text="%s%s" % (sign, _fmt(abs(mover_delta))),
+                     bg=BG2, fg=color, font=('Segoe UI', 9, 'bold')).pack(side='left')
+
+    # ── Distraction triggers, and which days run longest ──────────────────────
+    #
+    # ROADMAP.md item 3's other two "pattern recognition" pieces — used to be
+    # teased in _draw_premium below ("Distraction triggers" / "Day-of-week
+    # breakdown"); both now have a real section here, same as "This Week vs
+    # Last Week" above. core/trends.py does the arithmetic; this just renders
+    # it, and a distraction is `_DISTRACTING`-category the same way the rest
+    # of this page already defines it — no new taxonomy.
+
+    def _draw_patterns(self, recent_sessions, all_apps, daily_totals):
+        f = self._section("Patterns in Your History")
+        f.columnconfigure(0, weight=1)
+        f.columnconfigure(1, weight=1)
+
+        name_by_id = {a["id"]: a["name"] for a in all_apps}
+        distraction_ids = {a["id"] for a in all_apps if a.get("category") in _DISTRACTING}
+
+        # ── Distraction triggers ──
+        card_a = self._card(f, col=0, row=0)
+        tk.Label(card_a, text="Distraction triggers", bg=BG2, fg=TEXT,
+                 font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+        if not distraction_ids:
+            tk.Label(card_a, text="No distracting-category apps tracked yet.",
+                     bg=BG2, fg=TEXT2, font=('Segoe UI', 9), wraplength=170,
+                     justify='left').pack(anchor='w', pady=(6, 0))
+        else:
+            triggers = trends.preceding_app_triggers(recent_sessions, distraction_ids)
+            if not triggers:
+                tk.Label(card_a, text="Not enough back-to-back sessions yet.",
+                         bg=BG2, fg=TEXT2, font=('Segoe UI', 9),
+                         wraplength=170, justify='left').pack(anchor='w', pady=(6, 0))
+            else:
+                for t in triggers:
+                    row = tk.Frame(card_a, bg=BG2)
+                    row.pack(fill='x', pady=2)
+                    name = name_by_id.get(t["app_id"], "App #%s" % t["app_id"])
+                    tk.Label(row, text=name, bg=BG2, fg=TEXT, font=('Segoe UI', 9),
+                             width=16, anchor='w').pack(side='left')
+                    tk.Label(row, text="%d×" % t["count"], bg=BG2, fg=WARNING,
+                             font=('Segoe UI', 9, 'bold')).pack(side='left')
+                tk.Label(card_a, text="led into a distraction — last 30 days",
+                         bg=BG2, fg=TEXT2, font=('Segoe UI', 8)).pack(anchor='w', pady=(4, 0))
+
+        # ── Day-of-week breakdown ──
+        card_b = self._card(f, col=1, row=0)
+        tk.Label(card_b, text="Day-of-week breakdown", bg=BG2, fg=TEXT,
+                 font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+        weekdays = trends.weekday_breakdown(daily_totals)
+        if not weekdays:
+            tk.Label(card_b, text="Not enough history yet.",
+                     bg=BG2, fg=TEXT2, font=('Segoe UI', 9)).pack(anchor='w', pady=(6, 0))
+        else:
+            worst = weekdays[0]
+            tk.Label(card_b, text=worst["name"], bg=BG2, fg=ERROR,
+                     font=('Segoe UI', 14, 'bold')).pack(anchor='w', pady=(6, 0))
+            tk.Label(card_b, text="%s average" % _fmt(worst["avg_sec"]),
+                     bg=BG2, fg=TEXT2, font=('Segoe UI', 9)).pack(anchor='w')
+            if worst["drift_pct"] is not None and worst["drift_pct"] > 0:
+                tk.Label(card_b, text="+%.0f%% vs your daily average" % worst["drift_pct"],
+                         bg=BG2, fg=ERROR, font=('Segoe UI', 9, 'bold')).pack(anchor='w', pady=(2, 0))
+            tk.Label(card_b, text="last 28 days", bg=BG2, fg=TEXT2,
+                     font=('Segoe UI', 8)).pack(anchor='w', pady=(4, 0))
 
     # ── Distracting apps — "time cost" framing ────────────────────────────────
 
@@ -420,27 +581,27 @@ class InsightsPage(ttk.Frame):
         reads as a real finding and is a false claim about that person's own
         data. See ROADMAP.md and AUDIT.md BL-02.
         """
+        # Week-over-week trends, distraction triggers and the day-of-week
+        # breakdown were all teased here at one point or another, and each
+        # now has its own real section above — ROADMAP.md item 3 ("pattern
+        # recognition") is fully shipped. A teaser for something already
+        # shipped and free would be the mirror image of the thing this
+        # method's own docstring warns against: not an invented finding, but
+        # an invented *absence* of one.
+        teasers = []
+
+        if not teasers:
+            # Nothing left to preview here right now. ROADMAP.md's other
+            # open items — predictive alerts, PDF export, team features —
+            # live in ui/devices_page.py's own _PLANNED_FEATURES, not this
+            # page; an empty "Planned" section with nothing under it would
+            # look broken, or worse, read as a claim that nothing else is
+            # planned anywhere.
+            return
+
         f = self._section("\u25cb  Advanced Insights  \u2014  Planned", color=TEXT2)
 
-        teasers = [
-            {
-                "title":   "Distraction triggers",
-                "preview": "Which app you tend to open\nright after closing another",
-                "sub":     "Computed from your own session history",
-            },
-            {
-                "title":   "Week-over-week trends",
-                "preview": "How this week compares\nwith the weeks before it",
-                "sub":     "Needs a few weeks of history to be meaningful",
-            },
-            {
-                "title":   "Day-of-week breakdown",
-                "preview": "Which days run longest,\nand by how much",
-                "sub":     "Plan your week around your weak spots",
-            },
-        ]
-
-        for i in range(3):
+        for i in range(len(teasers)):
             f.columnconfigure(i, weight=1)
 
         for i, t in enumerate(teasers):

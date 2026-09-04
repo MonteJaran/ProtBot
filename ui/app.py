@@ -9,6 +9,7 @@ import webbrowser
 import threading
 
 from core.logging_setup import get_logger
+from ui import a11y, theme
 from ui.files_page import FilesPage
 from ui.processes_page import ProcessesPage
 from ui.settings_page import SettingsPage
@@ -97,15 +98,11 @@ class KillToast:
             pass
 
 # ── Color Scheme ──────────────────────────────────────────────────────────────
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
+# The canonical definitions live in ui/theme.py, along with the high-contrast
+# alternative (AUDIT ST-06) — these names are re-pointed at it in-place by
+# theme.apply_to_modules(), called from MainApp.__init__ before any widget
+# is built. See that module's docstring for how and why.
+from ui.theme import BG, BG2, BG3, ACCENT, TEXT, TEXT2, ERROR  # noqa: E402
 
 
 def _configure_style() -> ttk.Style:
@@ -329,25 +326,23 @@ class AdBanner(tk.Frame):
         # Divider
         tk.Frame(self, bg='#1e3a5f', width=1).pack(side='left', fill='y', pady=8)
 
-        # Centre: ad copy
+        # Centre: ad copy. The whole strip is one activatable region — see
+        # AUDIT ST-06: a click handler with no keyboard equivalent is not
+        # actually reachable by keyboard, whatever the mouse cursor implies.
         centre = tk.Frame(self, bg='#0d1b33', cursor='hand2')
         centre.pack(side='left', fill='both', expand=True, padx=12, pady=0)
-        centre.bind('<Button-1>', self._on_click)
 
         self._lbl_label    = tk.Label(centre, text="", bg='#0d1b33', fg='#4a7fa0',
                                       font=('Segoe UI', 9), anchor='w', cursor='hand2')
         self._lbl_label.pack(fill='x', anchor='w', pady=(9, 0))
-        self._lbl_label.bind('<Button-1>', self._on_click)
 
         self._lbl_headline = tk.Label(centre, text="", bg='#0d1b33', fg='#c8ddf0',
                                       font=('Segoe UI', 10, 'bold'), anchor='w', cursor='hand2')
         self._lbl_headline.pack(fill='x', anchor='w')
-        self._lbl_headline.bind('<Button-1>', self._on_click)
 
         self._lbl_sub      = tk.Label(centre, text="", bg='#0d1b33', fg='#607080',
                                       font=('Segoe UI', 9), anchor='w', cursor='hand2')
         self._lbl_sub.pack(fill='x', anchor='w')
-        self._lbl_sub.bind('<Button-1>', self._on_click)
 
         # Right: domain tag + subtle arrow
         right = tk.Frame(self, bg='#0d1b33')
@@ -356,7 +351,13 @@ class AdBanner(tk.Frame):
         self._lbl_tag = tk.Label(right, text="", bg='#0d1b33', fg='#3a5a78',
                                  font=('Segoe UI', 9), cursor='hand2')
         self._lbl_tag.pack(anchor='center', pady=17)
-        self._lbl_tag.bind('<Button-1>', self._on_click)
+
+        for widget in (centre, self._lbl_label, self._lbl_headline,
+                      self._lbl_sub, self._lbl_tag):
+            widget.bind('<Button-1>', self._on_click)
+            a11y.bind_activate(widget, self._on_click,
+                               ring_color=theme.FOCUS_RING["normal"],
+                               background='#0d1b33')
 
     def _show_ad(self, idx: int) -> None:
         if not _ADS:
@@ -391,8 +392,20 @@ class MainApp:
         self.config = config
         self.monitor = monitor
 
+        # theme.apply_to_modules() has to run before _setup_window() and
+        # _configure_style(), both of which read this module's BG etc. as
+        # globals. a11y.apply_focus_ring() has to run after _configure_style()
+        # specifically, not just before _build_ui(): ttk keeps each theme's
+        # style customizations separate, and _configure_style() is what
+        # switches to 'clam' in the first place — a style.map() made before
+        # that switch lands on the theme Tk started with instead and is gone
+        # the moment 'clam' becomes active. Both still have to run before a
+        # single page is built. See ui/theme.py and ui/a11y.py. AUDIT ST-06.
+        theme.apply_to_modules(config)
         self._setup_window()
         _configure_style()
+        a11y.apply_focus_ring(root, config)
+
         self._build_ui()
         self._start_refresh_loop()
 
@@ -458,6 +471,12 @@ class MainApp:
 
         # Refresh insights only when its tab is selected — prevents scroll reset
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+        # ttk.Notebook already handles Ctrl+Tab / Ctrl+Shift+Tab and the
+        # arrow keys once it has focus (AUDIT ST-06) — this just means a
+        # keyboard-only user does not have to click it first to discover
+        # that.
+        self.notebook.focus_set()
 
         # ── Bottom section (pack bottom-up so notebook gets remaining space) ──
         # Status bar (bottommost)

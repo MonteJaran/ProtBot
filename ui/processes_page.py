@@ -11,18 +11,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 
+from ui import a11y
+# See ui/theme.py's docstring: the canonical definitions, and the
+# high-contrast alternative (AUDIT ST-06), live there.
+from ui.theme import BG, BG2, BG3, TEXT, TEXT2, SUCCESS, ERROR
+
 # ── Color Scheme ─────────────────────────────────────────────────────────────
 log = get_logger("ui.processes")
-
-BG      = '#1a1a2e'
-BG2     = '#16213e'
-BG3     = '#0f3460'
-ACCENT  = '#e94560'
-TEXT    = '#e0e0e0'
-TEXT2   = '#9090a0'
-SUCCESS = '#4ade80'
-WARNING = '#fbbf24'
-ERROR   = '#f87171'
 
 
 def _fmt_sec(seconds: int) -> str:
@@ -42,12 +37,8 @@ class ProcessesPage(ttk.Frame):
         self.config = config
         self.monitor = monitor
         self.configure(style='TFrame')
-        self._synced_usage: dict = {}   # server_app_id → total_sec (legacy)
-        self._app_details: list = []    # list of {devId, serverId, name, category, sec, isOwn}
-        self._linked_device_count: int = 1
         self._build_ui()
         self.refresh()
-        self._schedule_sync()
 
     # ── Build UI ──────────────────────────────────────────────────────────────
 
@@ -101,7 +92,6 @@ class ProcessesPage(ttk.Frame):
         self._tree.tag_configure('running',   foreground=SUCCESS)
         self._tree.tag_configure('stopped',   foreground=TEXT2)
         self._tree.tag_configure('overlimit', foreground=ERROR)
-        self._tree.tag_configure('mobile',    foreground='#7c3aed')
 
         # ── Bottom toolbar ────────────────────────────────────────────────────
         btn_frame = ttk.Frame(self, style='TFrame')
@@ -113,6 +103,10 @@ class ProcessesPage(ttk.Frame):
                    command=self.clear_today, style='Danger.TButton').pack(side='left', padx=(0, 6))
         ttk.Button(btn_frame, text="Export CSV",
                    command=self.export_csv).pack(side='left', padx=(0, 6))
+        ttk.Button(btn_frame, text="Export Excel",
+                   command=self.export_excel).pack(side='left', padx=(0, 6))
+        ttk.Button(btn_frame, text="Export PDF",
+                   command=self.export_pdf).pack(side='left', padx=(0, 6))
 
         self._bottom_info = tk.StringVar()
         tk.Label(btn_frame, textvariable=self._bottom_info,
@@ -214,37 +208,6 @@ class ProcessesPage(ttk.Frame):
             if selected_app_id and app_id == selected_app_id:
                 restore_iid = iid
 
-        # ── Cross-device rows (from Firebase sync via appDetails) ─────────────
-        # Use the resolved appDetails list so we show real names instead of "App #X".
-        # Only show entries that do NOT belong to this device (isOwn=False).
-        for detail in self._app_details:
-            if detail.get("isOwn", True):
-                continue   # already shown under "This PC" above
-            sec  = detail.get("sec", 0)
-            name = detail.get("name") or f"App #{detail.get('serverId', '?')}"
-            cat  = detail.get("category", "—")
-
-            # Use device name from server if available
-            dev_name     = detail.get("deviceName")
-            dev_platform = detail.get("devicePlatform") or ""
-            if dev_name:
-                if "Android" in dev_platform:
-                    dev_label = f"\U0001f4f1 {dev_name}"
-                elif dev_platform == "Windows":
-                    dev_label = f"\U0001f5a5 {dev_name}"
-                else:
-                    dev_label = f"\U0001f4f2 {dev_name}"
-            else:
-                dev_label = "\U0001f4f1 Mobile"
-
-            iid  = self._tree.insert(
-                "", 'end',
-                values=(dev_label, name, cat,
-                        "\u2014 Remote", _fmt_sec(sec), "\u2014",
-                        "\u2014", "\u2014", "\u2014"),
-                tags=('mobile',),
-            )
-
         if restore_iid:
             self._tree.focus(restore_iid)
             self._tree.selection_set(restore_iid)
@@ -253,7 +216,7 @@ class ProcessesPage(ttk.Frame):
         self._card_tracked._value_label.config(text=str(total_tracked))
         self._card_running._value_label.config(text=str(running_count))
         self._card_overlimit._value_label.config(text=str(over_limit_count))
-        self._card_devices._value_label.config(text=str(self._linked_device_count))
+        self._card_devices._value_label.config(text=str(self._linked_device_count()))
 
         # Show live monitor diagnostics
         poll_time = self.monitor.last_poll_time
@@ -284,40 +247,34 @@ class ProcessesPage(ttk.Frame):
         self.after(800, self.refresh)
 
     # ── Cross-device sync ─────────────────────────────────────────────────────
+    #
+    # There used to be a second poll loop here, hitting `GET /sync/{device_id}`
+    # directly — unauthenticated, the device id in the URL path, and reading
+    # response fields (appDetails, deviceName, ...) server/models.py's SyncResp
+    # never defined. See AUDIT SF-09. It is gone rather than fixed in place:
+    # the number this tab actually needs to enforce a limit correctly already
+    # flows through core.syncclient.SyncClient into every app's `today_sec`
+    # below (Monitor._usage_today_sec merges in sync_client.remote_seconds_for)
+    # — through the client that is authenticated, tested, and already running
+    # on its own thread. A second, separately-polling client duplicated both
+    # the traffic and the risk for a purely decorative breakdown the real
+    # protocol was never specified to support.
 
-    def _schedule_sync(self) -> None:
-        """Sync cross-device data every 15 minutes."""
-        self._do_sync()
-        self.after(900_000, self._schedule_sync)
+    def _linked_device_count(self) -> int:
+        """
+        How many devices are in this one's sync group, for the summary card.
 
-    def _do_sync(self) -> None:
-        """Fetch synced usage from all linked devices in background thread."""
-        import threading
-        import urllib.request
-        import json as _json
-
-        device_id = self.config.get("device_id", "")
-        server_url = self.config.get("server_url", "")
-        if not device_id or not server_url:
-            return
-
-        def _fetch():
-            try:
-                url = f"{server_url}/sync/{device_id}"
-                req = urllib.request.Request(url, method="GET")
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    data = _json.loads(resp.read().decode())
-                    self._synced_usage = data.get("apps", {})
-                    self._app_details  = data.get("appDetails", [])
-                    self._linked_device_count = data.get("devices", 1)
-                    self.after(0, self.refresh)
-            except Exception as e:
-                # Sync is best-effort, but a persistent failure needs to be
-                # findable rather than swallowed.
-                log.warning("Device sync failed: %s", e)
-
-        t = threading.Thread(target=_fetch, daemon=True)
-        t.start()
+        1 (just this device) whenever there is any doubt — sync off, never
+        synced, or no sync client at all — which is also the honest answer in
+        every one of those cases.
+        """
+        client = getattr(self.monitor, "sync_client", None)
+        if client is None:
+            return 1
+        try:
+            return max(1, int(client.status().get("devices", 0)) or 1)
+        except Exception:
+            return 1
 
     # ── Set Limits ────────────────────────────────────────────────────────────
 
@@ -342,6 +299,7 @@ class ProcessesPage(ttk.Frame):
         dialog.transient(self)
         dialog.grab_set()
         dialog.resizable(False, False)
+        a11y.bind_escape_closes(dialog)
 
         tk.Label(dialog, text=f"Usage limits for: {app['name']}",
                  bg=BG, fg=TEXT, font=('Segoe UI', 11, 'bold')).pack(padx=16, pady=(14, 8), anchor='w')
@@ -418,6 +376,54 @@ class ProcessesPage(ttk.Frame):
                             secs,
                             _fmt_sec(secs),
                         ])
+            messagebox.showinfo(
+                "Export Complete",
+                f"Usage data exported to:\n{filename}",
+                parent=self,
+            )
+        except Exception as exc:
+            messagebox.showerror("Export Failed", str(exc), parent=self)
+
+    # ── Export Excel ──────────────────────────────────────────────────────────
+
+    def export_excel(self) -> None:
+        from core import export_xlsx
+
+        docs_dir = os.path.join(os.path.expanduser("~"), "Documents")
+        os.makedirs(docs_dir, exist_ok=True)
+        filename = os.path.join(docs_dir, export_xlsx.default_filename())
+
+        try:
+            apps = self.db.get_all_tracked_apps()
+            history_by_app_id = {
+                app["id"]: self.db.get_usage_history(app["id"], days=30) for app in apps
+            }
+            export_xlsx.write_export(apps, history_by_app_id, filename)
+            messagebox.showinfo(
+                "Export Complete",
+                f"Usage data exported to:\n{filename}",
+                parent=self,
+            )
+        except Exception as exc:
+            # Catches export_xlsx.ExportUnavailable (openpyxl missing) the
+            # same way as any other export failure — one message box either way.
+            messagebox.showerror("Export Failed", str(exc), parent=self)
+
+    # ── Export PDF ────────────────────────────────────────────────────────────
+
+    def export_pdf(self) -> None:
+        from core import export_pdf
+
+        docs_dir = os.path.join(os.path.expanduser("~"), "Documents")
+        os.makedirs(docs_dir, exist_ok=True)
+        filename = os.path.join(docs_dir, export_pdf.default_filename())
+
+        try:
+            apps = self.db.get_all_tracked_apps()
+            history_by_app_id = {
+                app["id"]: self.db.get_usage_history(app["id"], days=30) for app in apps
+            }
+            export_pdf.write_export(apps, history_by_app_id, filename)
             messagebox.showinfo(
                 "Export Complete",
                 f"Usage data exported to:\n{filename}",

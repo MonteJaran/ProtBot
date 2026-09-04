@@ -45,7 +45,7 @@ class TestLicensing:
     def test_third_party_notices_exist(self):
         assert os.path.isfile(os.path.join(REPO_ROOT, "THIRD_PARTY_NOTICES.md"))
 
-    @pytest.mark.parametrize("dependency", ["psutil", "plyer"])
+    @pytest.mark.parametrize("dependency", ["psutil", "plyer", "openpyxl", "et-xmlfile"])
     def test_every_bundled_dependency_is_named_in_the_notices(self, dependency):
         assert dependency in read("THIRD_PARTY_NOTICES.md").lower()
 
@@ -231,11 +231,13 @@ class TestDataExport:
         # An export is a file the user may email. A licence blob or a device id
         # in it would let the recipient act as this installation.
         config.set("device_id", "secret-device-id")
+        config.set("device_token", "secret-bearer-token")
         config.set("entitlement", {"sig": "secret-signature"})
         config.set("server_app_ids", {"1": 42})
 
         text = json.dumps(dataexport.build_export(db, config))
         assert "secret-device-id" not in text
+        assert "secret-bearer-token" not in text
         assert "secret-signature" not in text
 
     def test_the_export_says_what_it_left_out_and_why(self, db, config, populated):

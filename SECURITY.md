@@ -52,10 +52,16 @@ fine — you will just get this section back.
   attacker who already has the account gains nothing real, because the key
   would have to live in the same place. `PRIVACY.md` states this plainly
   rather than implying protection that is not there.
-- **The device id is the sync credential and travels in a URL path**, where it
-  lands in server and proxy logs. This one is a genuine weakness, tracked as
-  AUDIT SF-09 and item 1 of the coding list in `STATUS.md`. It is named here
-  because you would find it anyway.
+- **AUDIT SF-09 is half-closed: the client authenticates, but nothing checks
+  it yet.** Registration now returns a second secret, a bearer token
+  (`server/models.py` note 4), and every client — `core/syncclient.py`,
+  `core/linking.py`, `android/app/.../SyncClient.kt` — sends it as
+  `Authorization: Bearer <token>` and puts no device id in a URL path any
+  more. What is still missing is a server that verifies the header instead of
+  trusting whatever `d` a request claims; there is no server at all yet
+  (STATUS.md, "Blocked on you"). Reported here so the gap between "the client
+  sends a credential" and "something is checked against it" is not lost
+  before whoever builds that server reads this file.
 
 ## Supported versions
 
