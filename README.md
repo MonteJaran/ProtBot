@@ -41,14 +41,14 @@ python -m pytest          # see STATUS.md for the current count; none touch your
 python -m ruff check .    # lint
 ```
 
-A few tests (QR round-tripping, the SBOM) skip unless their extra is
-installed too — `pip install -e .[dev]` gets all of it, and also makes
-`core`/`ui`/`main` importable from outside the repo root the same way
-`pyproject.toml`'s `protbot` entry point does.
+A few tests (QR round-tripping) skip unless their extra is installed too —
+`pip install -e .[dev]` gets all of it, and also makes `core`/`ui`/`main`
+importable from outside the repo root the same way `pyproject.toml`'s
+`protbot` entry point does.
 
 CI runs the suite on Linux and Windows against Python 3.10 and 3.12, plus
 lint, a byte-compile of the Tk modules, a real install of `requirements.txt`
-and of the package itself, and a dependency audit and SBOM against
+and of the package itself, and a dependency audit against
 `requirements.lock`.
 
 ## Project documents

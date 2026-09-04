@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 809 Python tests green on 3.10 and 3.12, plus 118
+**Where things stand:** 803 Python tests green on 3.10 and 3.12, plus 118
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -54,20 +54,28 @@ one, so the stock-camera path is complete. What is missing is scanning from
 *inside* the app, which needs CameraX and ML Kit — and cannot be verified on a
 machine with no Android SDK.
 
-### 3. Build the Android app for real
+### 3. Generate an SBOM, for the EU Cyber Resilience Act
+Regulation (EU) 2024/2847 applies to products with digital elements sold in the
+EU. Vulnerability-reporting obligations begin **11 September 2026**; full
+application **11 December 2027**. Partly covered already — `SECURITY.md` is the
+vulnerability policy, `pip-audit` runs in CI, dependencies are hash-pinned.
+Missing is the bill of materials; `cyclonedx-py` over the lockfile in a CI job
+is most of it.
+
+### 4. Build the Android app for real
 The shared rules compile and pass the Kotlin count in the header above.
 `android/app/` has never been compiled, because this machine has no Android
 SDK. Until someone runs `gradle :app:assembleDebug`, the Android half is
 source code rather than software.
 
-### 4. Write the Android screens
+### 5. Write the Android screens
 The app picker (the `<queries>` block is declared, the UI is not), limit
 editing, and the insights screen. The blocking logic underneath them is done
 and tested — including, now, the manual app-matching data layer (see
 Finished below): `SyncClient.kt` has `manualKeyFor`/`setManualKey`/
 `clearManualKey` ready, and no screen calls them yet.
 
-### 5. The remaining roadmap features
+### 6. The remaining roadmap features
 In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
 user's own history (plain statistics, no model needed), predictive alerts, PDF
 and Excel export, team features. None worth starting before someone has
@@ -151,7 +159,6 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **A full test suite** | Counts are at the top of this file, which a test holds current — not repeated here, after this row itself went stale once. Plus lint, a byte-compile pass over the Tk modules the suite cannot import, and a packaging-config check. |
 | **Hash-pinned dependencies** | `requirements.lock` pins every dependency to an exact version and SHA-256 hash. Release builds install with `--require-hashes`. |
 | **`pip-audit` in CI, and Dependabot** | Pinning makes builds reproducible and also freezes any advisory published after the pin. This is the other half of that trade. |
-| **A software bill of materials, in CI** | `cyclonedx-py` over `requirements.lock`, published as a build artifact on every push. For the EU Cyber Resilience Act — vulnerability-reporting obligations begin 11 September 2026. `tests/test_sbom.py` checks the generated SBOM actually lists every pinned dependency at its pinned version, not just that the command exits 0. |
 | **An installable package (AUDIT ST-04)** | `pyproject.toml` declares a real build backend and a `protbot = "main:main"` entry point; `main.py`'s `sys.path.insert` — which only ever worked because it happens to sit at the repo root beside `core/` and `ui/` — is gone. Verified with an actual `pip install -e .`, not just read back: that install caught a real bug (a `License ::` classifier that current setuptools now refuses to combine with a license expression, PEP 639 — pre-existing, never triggered because nothing had ever run `pip install .` here before), fixed alongside it. The `dependencies` CI job now installs the package for real and imports `main` on Windows, the target platform. |
 | **Renamed to ProtBot** | Including the data directory, with a migration that never overwrites newer data and never deletes the old folder if the move fails. |
 | **Signed, machine-bound licence gate** | 14-day offline grace. Server errors never revoke; only an explicit refusal does. |

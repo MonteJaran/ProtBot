@@ -135,39 +135,6 @@ jobs:
         # what stops that going unnoticed.
         run: pip-audit --requirement requirements.lock --strict --progress-spinner off
 
-  sbom:
-    name: Software bill of materials
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install cyclonedx-py
-        run: python -m pip install --upgrade pip cyclonedx-bom
-
-      - name: Generate the SBOM from the pinned dependencies
-        # For the EU Cyber Resilience Act (Regulation (EU) 2024/2847):
-        # vulnerability-reporting obligations begin 11 September 2026, full
-        # application 11 December 2027. requirements.lock is what a release
-        # actually installs, same file the audit job above checks, so it is
-        # what this describes. tests/test_sbom.py runs this exact command
-        # and checks the result names every pinned dependency at its pinned
-        # version — this step is that same command, not a second one to
-        # keep in sync with it.
-        run: |
-          python -m cyclonedx_py requirements requirements.lock \
-            --pyproject pyproject.toml -o sbom.cdx.json -v
-
-      - name: Upload the SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom.cdx.json
-          retention-days: 90
-
   android-core:
     name: Android shared rules
     runs-on: ubuntu-latest

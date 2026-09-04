@@ -56,10 +56,6 @@ dev = [
     "segno>=1.6",
     "opencv-python-headless>=4.9",
     "numpy>=1.24",
-    # Generates the SBOM tests/test_sbom.py checks and the sbom CI job
-    # publishes, for the EU Cyber Resilience Act — see STATUS.md. Not
-    # imported by the app and not shipped in a build.
-    "cyclonedx-bom>=7.0",
 ]
 
 [tool.pytest.ini_options]
