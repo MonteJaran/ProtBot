@@ -23,7 +23,7 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the test count in the header above is only as good as the last time someone ran it by hand. |
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI is currently **off** (`.github/workflows/ci.yml.disabled` — owner's instruction), and it had never run even before that: every job failed with "the account is locked due to a billing issue," not a code failure. Until billing is unlocked and someone renames the workflow back on, the test count in the header above is only as good as the last time someone ran it by hand. |
 | 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
 | 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
 | 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
@@ -209,7 +209,9 @@ Recorded so nobody rediscovers them as bugs.
 
 ## Suggested order
 
-1. **Unlock billing.** Until CI runs you cannot trust a single push.
+1. **Unlock billing, then turn CI back on** (`git mv
+   .github/workflows/ci.yml.disabled .github/workflows/ci.yml`). Until it
+   runs you cannot trust a single push.
 2. **Microsoft Store account.** $19 to stop SmartScreen frightening everyone
    who tries to install.
 3. **First real Windows build**, on a clean VM, through `BUILD.md`. Find out

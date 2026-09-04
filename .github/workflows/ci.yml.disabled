@@ -1,3 +1,10 @@
+# DISABLED — renamed out of .github/workflows/ so GitHub Actions no longer
+# discovers it (a workflow only runs from a *.yml/*.yaml file directly in
+# that directory). Turned off on the owner's instruction; GitHub billing was
+# separately locked already (see STATUS.md "Blocked on you" #1), so this
+# was not running cleanly regardless. To re-enable: `git mv
+# .github/workflows/ci.yml.disabled .github/workflows/ci.yml`, remove this
+# header, and unlock billing first or every job still fails the same way.
 name: CI
 
 on:
