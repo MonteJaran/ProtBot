@@ -325,6 +325,47 @@ class Database:
             (cutoff,),
         )
 
+    def get_total_usage_sec_for_week(self, weeks_ago: int = 0) -> int:
+        """
+        Total usage across every tracked app for one 7-day window.
+
+        `weeks_ago=0` is this week (today back 6 days, same window
+        `get_week_usage_sec` uses for one app); `weeks_ago=1` is the 7 days
+        before that, and so on. ROADMAP.md's "pattern recognition" item,
+        started at the plain-statistics end — see core/trends.py, which
+        turns two of these into a week-over-week comparison.
+        """
+        end = date.today() - timedelta(days=7 * weeks_ago)
+        start = end - timedelta(days=6)
+        row = self._fetchone(
+            """SELECT COALESCE(SUM(duration_sec), 0) AS total
+               FROM usage_sessions
+               WHERE date BETWEEN ? AND ?;""",
+            (start.isoformat(), end.isoformat()),
+        )
+        return int(row["total"]) if row else 0
+
+    def get_all_apps_usage_for_week(self, weeks_ago: int = 0):
+        """
+        Per-app usage for one 7-day window — see get_total_usage_sec_for_week
+        for what `weeks_ago` means. `get_all_apps_week_usage` is the
+        `weeks_ago=0` case of this, kept as its own method rather than
+        redefined in terms of this one: it already has callers and tests,
+        and there is no reason to risk either over a one-line reduction.
+        """
+        end = date.today() - timedelta(days=7 * weeks_ago)
+        start = end - timedelta(days=6)
+        return self._fetchall(
+            """SELECT s.app_id, a.name, a.category,
+                      COALESCE(SUM(s.duration_sec), 0) AS total_sec
+               FROM usage_sessions s
+               JOIN tracked_apps a ON a.id = s.app_id
+               WHERE s.date BETWEEN ? AND ?
+               GROUP BY s.app_id, a.name, a.category
+               ORDER BY total_sec DESC;""",
+            (start.isoformat(), end.isoformat()),
+        )
+
     def get_category_usage_week(self):
         """Usage grouped by app category for this week."""
         week_ago = (date.today() - timedelta(days=6)).isoformat()

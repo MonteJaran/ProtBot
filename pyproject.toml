@@ -32,6 +32,10 @@ classifiers = [
 dependencies = [
     "psutil>=5.9.0",
     "plyer>=2.1.0",
+    # .xlsx export (ROADMAP.md item 5). MIT, pure Python, no lxml/Pillow
+    # extras pulled in — checked against the packaging decision in AUDIT
+    # BL-05 before adding, the same way pystray/Pillow were dropped for it.
+    "openpyxl>=3.1.0",
 ]
 
 [project.scripts]

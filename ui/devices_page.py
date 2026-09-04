@@ -48,6 +48,7 @@ _FREE_FEATURES = [
     "Automatic app closing when over limit",
     "Usage insights: peak hours, categories, top apps",
     "CSV export",
+    "Excel (.xlsx) export",
     "All data stored locally on your PC",
     "Automatic cleanup of old history",
     "Scheduled focus hours",
@@ -64,7 +65,7 @@ _PLANNED_FEATURES = [
     "Cross-device sync",
     "Pattern recognition across your history",
     "Predictive distraction alerts",
-    "PDF / Excel report export",
+    "PDF report export",
     "Team challenges & leaderboards",
     "Priority support",
 ]

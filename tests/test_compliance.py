@@ -45,7 +45,7 @@ class TestLicensing:
     def test_third_party_notices_exist(self):
         assert os.path.isfile(os.path.join(REPO_ROOT, "THIRD_PARTY_NOTICES.md"))
 
-    @pytest.mark.parametrize("dependency", ["psutil", "plyer"])
+    @pytest.mark.parametrize("dependency", ["psutil", "plyer", "openpyxl", "et-xmlfile"])
     def test_every_bundled_dependency_is_named_in_the_notices(self, dependency):
         assert dependency in read("THIRD_PARTY_NOTICES.md").lower()
 

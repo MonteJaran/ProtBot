@@ -46,12 +46,19 @@ you rather than to one machine.
 Surface real patterns from recorded usage: which app tends to precede a long
 distraction session, which days drift worst, how a week compares to the last.
 
-- **Status:** not started
-- **Blocked on:** retention (needs enough history to be meaningful)
-- **Notes:** was advertised as "AI pattern recognition". Start with plain
-  statistics over the existing `usage_sessions` table — week-over-week deltas,
-  correlation between app launches, time-of-day clustering. That is genuinely
-  useful and needs no model. Only call it AI if a model is actually involved
+- **Status:** partly started. "How a week compares to the last" is live and
+  free — `core/trends.py` (`week_over_week_delta`, `biggest_movers`) plus
+  `ui/insights_page.py`'s "This Week vs Last Week" section, both this
+  week's total against last week's and which apps moved the most, either
+  direction. Still not started: which app precedes a distraction session
+  (correlation between app launches) and which days drift worst
+  (time-of-day / day-of-week clustering) — both still teased as "Planned"
+  in `ui/insights_page.py`'s `_draw_premium`.
+- **Blocked on:** nothing for the two remaining pieces — retention (done)
+  was the only blocker and it is shipped.
+- **Notes:** was advertised as "AI pattern recognition". Plain statistics
+  over the existing `usage_sessions` table, no model — genuinely useful on
+  its own. Only call it AI if a model is actually involved.
 
 
 ### 4. Predictive distraction alerts
@@ -66,11 +73,17 @@ just opened.
 ### 5. PDF / Excel report export
 Formatted weekly and monthly reports.
 
-- **Status:** not started — CSV export exists
-  (`ui/processes_page.py:export_csv`) and works
-- **Blocked on:** nothing
-- **Notes:** adds dependencies (`reportlab` or `weasyprint`, `openpyxl`) —
-  check their licences against the packaging decision in AUDIT BL-05 first
+- **Status:** partly started. Excel export is live and free —
+  `core/export_xlsx.py` builds a styled `.xlsx` workbook (header row, sized
+  columns, frozen header) from the same 30-day per-app history CSV export
+  already uses; `ui/processes_page.py:export_excel` wires it to an "Export
+  Excel" button next to "Export CSV". PDF is still not started.
+- **Blocked on:** nothing for PDF.
+- **Notes:** Excel export added `openpyxl` (MIT) as a runtime dependency —
+  checked against the packaging decision in AUDIT BL-05, hash-pinned in
+  `requirements.lock`, notice added to `THIRD_PARTY_NOTICES.md`. PDF would
+  add `reportlab` or `weasyprint` — check those licences the same way before
+  starting it.
 
 ### 6. Team challenges & leaderboards
 Shared goals across a group of linked users.

@@ -14,6 +14,8 @@ listed; `requirements.lock` is the exact record of what a release contains.
 |---|---|---|
 | psutil | 7.2.2 | BSD-3-Clause |
 | plyer | 2.1.0 | MIT |
+| openpyxl | 3.1.5 | MIT |
+| et-xmlfile (openpyxl's own dependency) | 2.0.0 | MIT |
 | Python standard library, incl. Tkinter | 3.10+ | PSF-2.0 |
 
 The Android app additionally bundles AndroidX, Jetpack Compose, Room and
@@ -91,6 +93,42 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+
+---
+
+## openpyxl and et-xmlfile
+
+Used for `.xlsx` export (ROADMAP.md item 5, `core/export_xlsx.py`). et-xmlfile
+is openpyxl's own dependency — a small, fast alternative to Python's
+`xml.etree.ElementTree` for the incremental XML writing an `.xlsx` file needs
+— and travels with it into the build, so it is listed here too.
+
+```
+This software is under the MIT Licence
+
+Copyright (c) 2010 openpyxl
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+et-xmlfile ships the identical text (same project, same copyright holder).
 
 ---
 

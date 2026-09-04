@@ -141,6 +141,62 @@ def test_usage_history_respects_the_cutoff(db):
     assert db.get_usage_history(app_id, days=30) == []
 
 
+# ── Weekly windows (core/trends.py's data source) ──────────────────────────────
+
+def test_total_usage_for_week_sums_this_weeks_sessions_only(db):
+    app_id = db.add_tracked_app("Code", "code.exe")
+    for days_ago, seconds in ((0, 100), (6, 200), (7, 999), (13, 999), (14, 999)):
+        stamp = (datetime.now() - timedelta(days=days_ago)).isoformat()
+        db.end_session(db.start_session(app_id, stamp), stamp, seconds)
+
+    assert db.get_total_usage_sec_for_week(weeks_ago=0) == 300
+
+def test_total_usage_for_week_reaches_back_a_full_week_at_a_time(db):
+    app_id = db.add_tracked_app("Code", "code.exe")
+    for days_ago, seconds in ((0, 999), (6, 999), (7, 400), (13, 500), (14, 999)):
+        stamp = (datetime.now() - timedelta(days=days_ago)).isoformat()
+        db.end_session(db.start_session(app_id, stamp), stamp, seconds)
+
+    assert db.get_total_usage_sec_for_week(weeks_ago=1) == 900
+
+def test_total_usage_for_week_sums_across_every_app(db):
+    a = db.add_tracked_app("A", "a.exe")
+    b = db.add_tracked_app("B", "b.exe")
+    now = datetime.now().isoformat()
+    db.end_session(db.start_session(a, now), now, 100)
+    db.end_session(db.start_session(b, now), now, 250)
+    assert db.get_total_usage_sec_for_week(weeks_ago=0) == 350
+
+def test_total_usage_for_week_is_zero_with_no_data(db):
+    assert db.get_total_usage_sec_for_week(weeks_ago=0) == 0
+    assert db.get_total_usage_sec_for_week(weeks_ago=1) == 0
+
+def test_all_apps_usage_for_week_matches_the_current_week_method(db):
+    # get_all_apps_week_usage is the weeks_ago=0 case of this — same query,
+    # kept as two methods (see the docstring); this pins them to agree.
+    a = db.add_tracked_app("A", "a.exe", category="Social")
+    b = db.add_tracked_app("B", "b.exe", category="Work")
+    now = datetime.now().isoformat()
+    db.end_session(db.start_session(a, now), now, 100)
+    db.end_session(db.start_session(b, now), now, 250)
+
+    assert db.get_all_apps_usage_for_week(weeks_ago=0) == db.get_all_apps_week_usage()
+
+def test_all_apps_usage_for_week_reaches_back_a_full_week_at_a_time(db):
+    app_id = db.add_tracked_app("Code", "code.exe")
+    last_week = (datetime.now() - timedelta(days=8)).isoformat()
+    db.end_session(db.start_session(app_id, last_week), last_week, 700)
+
+    this_week_rows = db.get_all_apps_usage_for_week(weeks_ago=0)
+    last_week_rows = db.get_all_apps_usage_for_week(weeks_ago=1)
+    assert this_week_rows == []
+    assert len(last_week_rows) == 1
+    assert last_week_rows[0]["total_sec"] == 700
+
+def test_all_apps_usage_for_week_is_empty_with_no_data(db):
+    assert db.get_all_apps_usage_for_week(weeks_ago=0) == []
+
+
 # ── Aggregation ───────────────────────────────────────────────────────────────
 
 def test_all_usage_today_is_sorted_by_duration(db):

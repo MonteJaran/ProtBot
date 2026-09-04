@@ -6,6 +6,7 @@ Refreshed only when the tab is selected, so scroll position is never lost.
 import tkinter as tk
 from tkinter import ttk
 
+from core import trends
 from ui import a11y
 # See ui/theme.py's docstring: the canonical definitions, and the
 # high-contrast alternative (AUDIT ST-06), live there. GOLD/PURPLE/CYAN are
@@ -124,9 +125,16 @@ class InsightsPage(ttk.Frame):
             categories = self.db.get_category_usage_week()
         except Exception:
             categories = []
+        try:
+            last_week_apps  = self.db.get_all_apps_usage_for_week(weeks_ago=1)
+            this_week_total = self.db.get_total_usage_sec_for_week(weeks_ago=0)
+            last_week_total = self.db.get_total_usage_sec_for_week(weeks_ago=1)
+        except Exception:
+            last_week_apps, this_week_total, last_week_total = [], 0, 0
 
         self._draw_header()
         self._draw_top_apps(week_apps)
+        self._draw_trend(week_apps, last_week_apps, this_week_total, last_week_total)
         self._draw_distracting(week_apps, categories)
         self._draw_productive(week_apps, categories)
         self._draw_peak_hours(peak_hours)
@@ -194,6 +202,73 @@ class InsightsPage(ttk.Frame):
                      font=('Segoe UI', 22, 'bold')).pack(anchor='w', pady=(6, 0))
             tk.Label(card, text="this week", bg=BG2, fg=TEXT2,
                      font=('Segoe UI', 9)).pack(anchor='w')
+
+    # ── This week vs last week ──────────────────────────────────────────────
+    #
+    # ROADMAP.md's "pattern recognition" item, started at the honest end:
+    # arithmetic over this user's own two most recent weeks (core/trends.py),
+    # not a model. Compared to _WORLD_AVG above, an outside estimate this app
+    # was never in a position to measure, this is a number computed from
+    # exactly the rows this installation holds.
+
+    def _draw_trend(self, week_apps, last_week_apps, this_week_total, last_week_total):
+        f = self._section("This Week vs Last Week")
+        card = tk.Frame(f, bg=BG2, padx=14, pady=12)
+        card.pack(fill='x', padx=5, pady=5)
+
+        delta = trends.week_over_week_delta(this_week_total, last_week_total)
+        if delta["this_week_sec"] == 0 and delta["last_week_sec"] == 0:
+            tk.Label(card, text="Not enough history yet — check back next week.",
+                     bg=BG2, fg=TEXT2, font=('Segoe UI', 10)).pack(anchor='w')
+            return
+
+        delta_sec = delta["delta_sec"]
+        delta_pct = delta["delta_pct"]
+        if delta_pct is None:
+            change_text = "new this week" if delta_sec > 0 else "—"
+            change_color = TEXT2
+        elif delta_sec > 0:
+            change_text = "+%.0f%% vs last week" % delta_pct
+            change_color = ERROR      # more screen time — same framing as "Time You Could Reclaim"
+        elif delta_sec < 0:
+            change_text = "%.0f%% vs last week" % delta_pct
+            change_color = SUCCESS
+        else:
+            change_text = "no change vs last week"
+            change_color = TEXT2
+
+        top_row = tk.Frame(card, bg=BG2)
+        top_row.pack(fill='x', anchor='w')
+        tk.Label(top_row, text=_fmt(delta["this_week_sec"]), bg=BG2, fg=TEXT,
+                 font=('Segoe UI', 20, 'bold')).pack(side='left')
+        tk.Label(top_row, text="  this week", bg=BG2, fg=TEXT2,
+                 font=('Segoe UI', 10)).pack(side='left', pady=(7, 0))
+        tk.Label(card, text=change_text, bg=BG2, fg=change_color,
+                 font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(2, 0))
+        tk.Label(card, text="Last week: %s" % _fmt(delta["last_week_sec"]),
+                 bg=BG2, fg=TEXT2, font=('Segoe UI', 9)).pack(anchor='w', pady=(2, 8))
+
+        name_by_id = {a["app_id"]: a["name"] for a in (*week_apps, *last_week_apps)}
+        this_by_id = {a["app_id"]: a["total_sec"] for a in week_apps}
+        last_by_id = {a["app_id"]: a["total_sec"] for a in last_week_apps}
+        movers = trends.biggest_movers(this_by_id, last_by_id, limit=3)
+        if not movers:
+            return
+
+        ttk.Separator(card).pack(fill='x', pady=(2, 8))
+        tk.Label(card, text="Biggest changes", bg=BG2, fg=TEXT2,
+                 font=('Segoe UI', 9, 'bold')).pack(anchor='w', pady=(0, 4))
+        for mover in movers:
+            name = name_by_id.get(mover["app_id"], "App #%s" % mover["app_id"])
+            mover_delta = mover["delta_sec"]
+            sign  = "+" if mover_delta > 0 else "−"
+            color = ERROR if mover_delta > 0 else SUCCESS
+            row = tk.Frame(card, bg=BG2)
+            row.pack(fill='x', pady=2)
+            tk.Label(row, text=name, bg=BG2, fg=TEXT, font=('Segoe UI', 9),
+                     width=20, anchor='w').pack(side='left')
+            tk.Label(row, text="%s%s" % (sign, _fmt(abs(mover_delta))),
+                     bg=BG2, fg=color, font=('Segoe UI', 9, 'bold')).pack(side='left')
 
     # ── Distracting apps — "time cost" framing ────────────────────────────────
 
@@ -432,16 +507,16 @@ class InsightsPage(ttk.Frame):
         """
         f = self._section("\u25cb  Advanced Insights  \u2014  Planned", color=TEXT2)
 
+        # Week-over-week trends used to be teased here and now has its own
+        # real section above ("This Week vs Last Week") — see ROADMAP.md
+        # item 3. A teaser for something already shipped and free would be
+        # the mirror image of the thing this method's own docstring warns
+        # against: not an invented finding, but an invented *absence* of one.
         teasers = [
             {
                 "title":   "Distraction triggers",
                 "preview": "Which app you tend to open\nright after closing another",
                 "sub":     "Computed from your own session history",
-            },
-            {
-                "title":   "Week-over-week trends",
-                "preview": "How this week compares\nwith the weeks before it",
-                "sub":     "Needs a few weeks of history to be meaningful",
             },
             {
                 "title":   "Day-of-week breakdown",
@@ -450,7 +525,7 @@ class InsightsPage(ttk.Frame):
             },
         ]
 
-        for i in range(3):
+        for i in range(len(teasers)):
             f.columnconfigure(i, weight=1)
 
         for i, t in enumerate(teasers):

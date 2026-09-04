@@ -137,12 +137,28 @@ def test_planned_features_are_not_also_sold():
         )
 
 
+def test_excel_export_is_not_also_teased_as_planned():
+    """
+    Regression guard: core/export_xlsx.py + ui/processes_page.py:export_excel
+    ship Excel export for free. _PLANNED_FEATURES used to carry a combined
+    "PDF / Excel report export" entry that this would silently contradict —
+    exactly the insights_page.py teaser bug this session already hit once.
+    Only the still-unshipped PDF half may remain in _PLANNED_FEATURES.
+    """
+    _free, _premium, planned = _plan_lists()
+    assert not any("excel" in f.lower() for f in planned), (
+        "Excel export ships for free (ui/processes_page.py:export_excel) but "
+        "_PLANNED_FEATURES still teases it as unavailable."
+    )
+
+
 # Features that were advertised while no code implemented them. Each may only
 # move into the sold lists once it genuinely works end to end.
 UNIMPLEMENTED_CLAIMS = [
     "ai pattern recognition",
     "predictive distraction alerts",
     "pdf / excel report export",
+    "pdf report export",
     "team challenges",
     "unlimited data retention",
     "4 weeks data retention",
@@ -167,4 +183,45 @@ def test_retention_is_not_advertised_until_it_is_implemented():
     assert "retention" not in sold, (
         "No retention logic exists in the codebase (AUDIT SF-11), so no plan "
         "may advertise a retention window."
+    )
+
+
+# ── The Insights "Planned" teasers must not tease what already shipped ────────
+#
+# The mirror image of BL-02: not an invented finding, but an invented
+# *absence* of one. ui/insights_page.py's _draw_premium docstring makes the
+# same point about the other direction (never show a made-up statistic as a
+# real finding) — this is what enforces it, since that module cannot be
+# imported here (no display; see CLAUDE.md) the way _plan_lists above imports
+# nothing and just parses the source.
+
+def _insights_teaser_titles():
+    tree = _module(os.path.join(REPO_ROOT, "ui", "insights_page.py"))
+    for node in ast.walk(tree):
+        is_teasers = (isinstance(node, ast.Assign)
+                     and any(isinstance(t, ast.Name) and t.id == "teasers"
+                            for t in node.targets))
+        if not is_teasers:
+            continue
+        return [
+            value.value
+            for dict_node in node.value.elts
+            for key, value in zip(dict_node.keys, dict_node.values, strict=True)
+            if isinstance(key, ast.Constant) and key.value == "title"
+            and isinstance(value, ast.Constant)
+        ]
+    raise AssertionError("no `teasers = [...]` assignment found in insights_page.py")
+
+
+def test_insights_teasers_exist():
+    assert _insights_teaser_titles(), "_draw_premium records what is still to be built"
+
+
+def test_insights_does_not_tease_a_section_it_already_ships():
+    # "This Week vs Last Week" (core/trends.py, ROADMAP.md item 3) shipped
+    # free — nothing in the teaser list may still claim it is only planned.
+    titles = [t.lower() for t in _insights_teaser_titles()]
+    assert not any("week-over-week" in t or "week over week" in t for t in titles), (
+        "insights_page.py teases week-over-week trends as 'Planned', but "
+        "_draw_trend already ships it for free. Remove the teaser."
     )

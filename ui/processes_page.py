@@ -103,6 +103,8 @@ class ProcessesPage(ttk.Frame):
                    command=self.clear_today, style='Danger.TButton').pack(side='left', padx=(0, 6))
         ttk.Button(btn_frame, text="Export CSV",
                    command=self.export_csv).pack(side='left', padx=(0, 6))
+        ttk.Button(btn_frame, text="Export Excel",
+                   command=self.export_excel).pack(side='left', padx=(0, 6))
 
         self._bottom_info = tk.StringVar()
         tk.Label(btn_frame, textvariable=self._bottom_info,
@@ -378,4 +380,29 @@ class ProcessesPage(ttk.Frame):
                 parent=self,
             )
         except Exception as exc:
+            messagebox.showerror("Export Failed", str(exc), parent=self)
+
+    # ── Export Excel ──────────────────────────────────────────────────────────
+
+    def export_excel(self) -> None:
+        from core import export_xlsx
+
+        docs_dir = os.path.join(os.path.expanduser("~"), "Documents")
+        os.makedirs(docs_dir, exist_ok=True)
+        filename = os.path.join(docs_dir, export_xlsx.default_filename())
+
+        try:
+            apps = self.db.get_all_tracked_apps()
+            history_by_app_id = {
+                app["id"]: self.db.get_usage_history(app["id"], days=30) for app in apps
+            }
+            export_xlsx.write_export(apps, history_by_app_id, filename)
+            messagebox.showinfo(
+                "Export Complete",
+                f"Usage data exported to:\n{filename}",
+                parent=self,
+            )
+        except Exception as exc:
+            # Catches export_xlsx.ExportUnavailable (openpyxl missing) the
+            # same way as any other export failure — one message box either way.
             messagebox.showerror("Export Failed", str(exc), parent=self)

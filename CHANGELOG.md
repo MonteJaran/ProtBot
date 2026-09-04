@@ -20,6 +20,18 @@ any of it. The first entry under a real version number will be written when
 
 ### Added
 
+- **Excel (.xlsx) export.** `core/export_xlsx.py`, and an "Export Excel"
+  button next to "Export CSV" in the Processes tab. The same 30-day per-app
+  usage history the CSV export already sends, as a styled workbook — header
+  row, sized columns, frozen header — instead of a flat file. Free, no
+  premium gate. Closes the Excel half of `ROADMAP.md`'s "PDF / Excel report
+  export"; PDF is still not started.
+- **Week-over-week usage trends.** `core/trends.py` and a new "This Week vs
+  Last Week" card on the Insights tab: total time this week against last
+  week, the percent change, and up to three apps with the biggest change
+  either direction. Free, no premium gate. Part of `ROADMAP.md`'s "pattern
+  recognition" item — plain statistics over the existing usage table, no
+  model involved.
 - **Matching an app across devices by hand.** The automatic name-based join
   (`canonical_app_key`) cannot resolve every pair — a package named after
   its vendor rather than its product, like Firefox.exe and

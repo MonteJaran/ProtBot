@@ -5,7 +5,7 @@ readiness audit found; `CHANGELOG.md` is the user-facing record of what
 changed. This file is the working todo, and it is kept current — see
 `CLAUDE.md`.
 
-**Where things stand:** 803 Python tests green on 3.10 and 3.12, plus 118
+**Where things stand:** 850 Python tests green on 3.10 and 3.12, plus 118
 Kotlin tests for the shared Android rules. Lint, byte-compile and dependency
 audit clean. Every safety-critical and legal finding from the audit is closed
 or has its remaining part named below.
@@ -15,7 +15,7 @@ has ever been built, nobody has ever installed it, and almost everything now
 standing between here and a first release is a decision or an account rather
 than a commit.
 
-*Last updated 2026-09-03.*
+*Last updated 2026-09-04.*
 
 ---
 
@@ -23,7 +23,7 @@ than a commit.
 
 | # | What | Cost | Why it blocks |
 |---|---|---|---|
-| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the 813 tests below are only as good as the last time someone ran them by hand. |
+| 1 | **Unlock GitHub billing** | Check https://github.com/settings/billing | CI has never run. Every job fails with "the account is locked due to a billing issue" — not a code failure. Until it runs, the test count in the header above is only as good as the last time someone ran it by hand. |
 | 2 | **Microsoft Store developer account** | ~$19 once | Microsoft signs Store packages, so **SmartScreen stops warning** — the same result as a €300/yr certificate. Also a distribution channel and a payment system. Cheapest unlock here by a wide margin. |
 | 3 | **A clean Windows VM, and the first build** | Free | Nothing in `packaging/` or `core/tray.py` has ever executed. `BUILD.md` walks it. Expect something to be wrong — finding out before anyone else does is the point. |
 | 4 | **Confirm you own `protbot.app`** | Domain cost | Three separate things now point at it: the update manifest (`core/updates.py`), the device-link URL (`core/linking.py`), and Android App Links verification. If the domain is not yours, all three need changing before release, and the link URL is baked into a payload format the phone parses. Cheap to settle now, annoying later. |
@@ -76,10 +76,12 @@ Finished below): `SyncClient.kt` has `manualKeyFor`/`setManualKey`/
 `clearManualKey` ready, and no screen calls them yet.
 
 ### 6. The remaining roadmap features
-In `ROADMAP.md`, all buildable, none blocking: pattern recognition over the
-user's own history (plain statistics, no model needed), predictive alerts, PDF
-and Excel export, team features. None worth starting before someone has
-installed the app.
+In `ROADMAP.md`, all buildable, none blocking. Two are partly done already —
+see Finished below: week-over-week trends (pattern recognition item 3) and
+Excel export (item 5) both shipped free. Still open: distraction-trigger
+correlation and day-of-week clustering (rest of item 3), predictive alerts,
+PDF export, team features. None worth starting before someone has installed
+the app.
 
 ---
 
@@ -125,6 +127,8 @@ is wrong. Listed so it surprises you on your own machine rather than a user's.
 | **Keyboard navigation and a high-contrast mode (AUDIT ST-06)** | Every dialog closes on Escape; a Canvas used for scrolling — three of them, one per page — is reachable by Tab, which Tk does not do by default; the app's one click-only control (an ad banner, currently unused — `_ADS` is empty) responds to Enter/Space too. A visible focus ring on every focusable control, in both palettes: `ui/a11y.py` sets it once, application-wide, rather than per widget. `ui/theme.py` adds a second, WCAG AA-verified palette (`tests/test_theme.py` checks the actual contrast ratio, not by eye) behind a Settings toggle — restart-required, said plainly, because Tk cannot re-theme a window already on screen. What this does not do, and says so in `ui/a11y.py`: full screen-reader support. Tk does not implement MSAA or UI Automation for the widgets it draws, so NVDA or Narrator would see an unlabelled pane, not a button — closing that gap for real means a different GUI toolkit or unverifiable native interop, not a Settings screen. |
 | **Crash handling** | Unhandled exceptions on the main thread, background threads and Tk callbacks all reach the log. A frozen build has no console, so a dead monitor thread used to mean limits silently stopped being enforced while the window looked fine. |
 | **A ctypes tray icon** | Replaced pystray, which dropped the LGPL-3.0 §4 obligations that are awkward to satisfy in a frozen build. |
+| **Week-over-week usage trends** | `core/trends.py` plus `ui/insights_page.py`'s "This Week vs Last Week" card: total time this week against last week, the percent change, and up to three apps with the biggest change either direction. Free, no premium gate. Part of `ROADMAP.md` item 3 ("pattern recognition"); the other two pieces — which app tends to precede a distraction session, which days drift worst — are still open. |
+| **Excel (.xlsx) export** | `core/export_xlsx.py`, and an "Export Excel" button next to "Export CSV" in the Processes tab. Same 30-day per-app history the CSV export already sends, as a styled workbook — header row, sized columns, frozen header — instead of a flat file. Free, no premium gate. Adds `openpyxl` (MIT) as a runtime dependency, hash-pinned in `requirements.lock`, noticed in `THIRD_PARTY_NOTICES.md`. Closes the Excel half of `ROADMAP.md` item 5; PDF export is still not started. |
 
 ### Cross-device
 
